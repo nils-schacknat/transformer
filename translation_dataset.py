@@ -9,10 +9,16 @@ class TranslationDataset(Dataset):
     def __init__(self, source_file, target_file, source_tokenizer, target_tokenizer, context_size):
         self.source_tokenizer = source_tokenizer
         self.target_tokenizer = target_tokenizer
-        self.source_vocab_size = self.source_tokenizer.vocab_size
-        self.target_vocab_size = self.target_tokenizer.vocab_size
+        self.source_vocab_size = len(self.source_tokenizer.get_vocab())
+        self.target_vocab_size = len(self.target_tokenizer.get_vocab())
         self.context_size = context_size
         self.return_tokens = False
+
+        self.transformer_params = dict(source_vocab_size=self.source_vocab_size,
+                                       target_vocab_size=self.target_vocab_size,
+                                       context_size=self.context_size, pad_idx=self.target_tokenizer.pad_token_id,
+                                       bos_idx=self.target_tokenizer.bos_token_id,
+                                       eos_idx=self.target_tokenizer.eos_token_id)
 
         # Check if processed tensors are already saved
         source_tensors_file = f'{source_file}_{self.context_size}.pt'
@@ -72,12 +78,14 @@ class TranslationDataset(Dataset):
             return source_indices, target_indices
 
 
-def get_english_german_translation_dataset(context_size=64):
+def get_english_german_translation_dataset():
+    context_size = 64
     source_file = 'translation_task/europarl-v7.de-en.en'
     target_file = 'translation_task/europarl-v7.de-en.de'
 
     source_tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
     source_tokenizer.add_special_tokens(dict(bos_token='[BOS]', eos_token='[EOS]'))
+
     target_tokenizer = BertTokenizer.from_pretrained('bert-base-german-cased')
     target_tokenizer.add_special_tokens(dict(bos_token='[BOS]', eos_token='[EOS]'))
 
@@ -100,19 +108,8 @@ def split_dataset(dataset, test_size):
 
 
 if __name__ == "__main__":
-    # Paths to source and target files
-    source_file = 'translation_task/europarl-v7.de-en.en'
-    target_file = 'translation_task/europarl-v7.de-en.de'
-
-    # Create instances of tokenizers (example using BERT tokenizer)
-    source_tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-    source_tokenizer.add_special_tokens(dict(bos_token='[BOS]', eos_token='[EOS]'))
-    target_tokenizer = BertTokenizer.from_pretrained('bert-base-german-cased')
-    target_tokenizer.add_special_tokens(dict(bos_token='[BOS]', eos_token='[EOS]'))
-
-    # Create the translation dataset
-    dataset = TranslationDataset(source_file=source_file, target_file=target_file, source_tokenizer=source_tokenizer,
-                                 target_tokenizer=target_tokenizer, context_size=64)
+    # Load the dataset
+    dataset = get_english_german_translation_dataset()
 
     # Create a data loader for batching and shuffling
     batch_size = 32
