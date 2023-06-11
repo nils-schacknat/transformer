@@ -1,7 +1,7 @@
 from typing import Optional
 
 import torch
-from torch import nn
+from torch import nn, Tensor
 
 
 def positional_encoding(context_size: int, embedding_dim: int) -> torch.Tensor:
@@ -39,14 +39,14 @@ class Decoder(nn.Module):
     """
 
     def __init__(
-            self,
-            stack_size: int,
-            model_dim: int,
-            ff_hidden_layer_dim: int,
-            num_attention_heads: int,
-            key_dim: int,
-            value_dim: int,
-            p_dropout: float,
+        self,
+        stack_size: int,
+        model_dim: int,
+        ff_hidden_layer_dim: int,
+        num_attention_heads: int,
+        key_dim: int,
+        value_dim: int,
+        p_dropout: float,
     ):
         """
         Initialize the decoder.
@@ -61,24 +61,26 @@ class Decoder(nn.Module):
             p_dropout (float): The dropout probability.
         """
         super().__init__()
-        self.encoder_blocks = nn.ModuleList([
-            DecoderBlock(
-                model_dim=model_dim,
-                ff_hidden_layer_dim=ff_hidden_layer_dim,
-                num_attention_heads=num_attention_heads,
-                key_dim=key_dim,
-                value_dim=value_dim,
-                p_dropout=p_dropout,
-            ) for _ in range(stack_size)
-        ])
+        self.decoder_blocks = nn.ModuleList(
+            [
+                DecoderBlock(
+                    model_dim=model_dim,
+                    ff_hidden_layer_dim=ff_hidden_layer_dim,
+                    num_attention_heads=num_attention_heads,
+                    key_dim=key_dim,
+                    value_dim=value_dim,
+                    p_dropout=p_dropout,
+                )
+                for _ in range(stack_size)
+            ]
+        )
 
-    def forward(self, input: torch.Tensor, current_token_idx: int, encoder_output: torch.Tensor):
+    def forward(self, input: Tensor, encoder_output: Tensor):
         """
         Forward pass of the Decoder module.
 
         Args:
             input (torch.Tensor): The input tensor of shape (batch_size, context_size, model_dim).
-            current_token_idx (int): The index of the token to generate.
             encoder_output (torch.Tensor): The output tensor from the encoder.
 
         Returns:
@@ -86,8 +88,8 @@ class Decoder(nn.Module):
 
         """
         output = input
-        for encoder_block in self.encoder_blocks:
-            output = encoder_block(output, mask_idx=current_token_idx, encoder_output=encoder_output)
+        for decoder_block in self.encoder_blocks:
+            output = decoder_block(output, encoder_output=encoder_output)
 
         return output
 
@@ -98,13 +100,13 @@ class DecoderBlock(nn.Module):
     """
 
     def __init__(
-            self,
-            model_dim: int,
-            ff_hidden_layer_dim: int,
-            num_attention_heads: int,
-            key_dim: int,
-            value_dim: int,
-            p_dropout: float,
+        self,
+        model_dim: int,
+        ff_hidden_layer_dim: int,
+        num_attention_heads: int,
+        key_dim: int,
+        value_dim: int,
+        p_dropout: float,
     ):
         """
         Initialize the decoder block.
@@ -133,22 +135,23 @@ class DecoderBlock(nn.Module):
         self.layer_norm_1 = nn.LayerNorm(model_dim)
         self.layer_norm_2 = nn.LayerNorm(model_dim)
         self.layer_norm_3 = nn.LayerNorm(model_dim)
-        self.ffn = FeedForwardNetwork(model_dim=model_dim, hidden_layer_dim=ff_hidden_layer_dim)
+        self.ffn = FeedForwardNetwork(
+            model_dim=model_dim, hidden_layer_dim=ff_hidden_layer_dim
+        )
 
-    def forward(self, input: torch.Tensor, mask_idx: int, encoder_output: torch.Tensor):
+    def forward(self, input: Tensor, encoder_output: Tensor):
         """
         Forward pass of the decoder block.
 
         Args:
             input (torch.Tensor): The input tensor of shape (batch_size, context_size, model_dim).
-            mask_idx (int): The index of the token to generate.
             encoder_output (torch.Tensor): The output tensor from the encoder.
 
         Returns:
             torch.Tensor: The output tensor of shape (batch_size, context_size, model_dim).
 
         """
-        x = input + self.masked_multi_head_attention(input, mask_idx=mask_idx)
+        x = input + self.masked_multi_head_attention(input, mask=True)
         x = self.layer_norm_1(x)
         y = input + self.multi_head_attention(x, encoder_output=encoder_output)
         y = self.layer_norm_2(y)
@@ -163,14 +166,14 @@ class Encoder(nn.Module):
     """
 
     def __init__(
-            self,
-            stack_size: int,
-            model_dim: int,
-            ff_hidden_layer_dim: int,
-            num_attention_heads: int,
-            key_dim: int,
-            value_dim: int,
-            p_dropout: float,
+        self,
+        stack_size: int,
+        model_dim: int,
+        ff_hidden_layer_dim: int,
+        num_attention_heads: int,
+        key_dim: int,
+        value_dim: int,
+        p_dropout: float,
     ):
         """
         Initialize the encoder.
@@ -185,16 +188,19 @@ class Encoder(nn.Module):
             p_dropout (float): The dropout probability.
         """
         super().__init__()
-        self.encoder_blocks = nn.ModuleList([
-            EncoderBlock(
-                model_dim=model_dim,
-                ff_hidden_layer_dim=ff_hidden_layer_dim,
-                num_attention_heads=num_attention_heads,
-                key_dim=key_dim,
-                value_dim=value_dim,
-                p_dropout=p_dropout,
-            ) for _ in range(stack_size)
-        ])
+        self.encoder_blocks = nn.ModuleList(
+            [
+                EncoderBlock(
+                    model_dim=model_dim,
+                    ff_hidden_layer_dim=ff_hidden_layer_dim,
+                    num_attention_heads=num_attention_heads,
+                    key_dim=key_dim,
+                    value_dim=value_dim,
+                    p_dropout=p_dropout,
+                )
+                for _ in range(stack_size)
+            ]
+        )
 
     def forward(self, input):
         """
@@ -220,13 +226,13 @@ class EncoderBlock(nn.Module):
     """
 
     def __init__(
-            self,
-            model_dim: int,
-            ff_hidden_layer_dim: int,
-            num_attention_heads: int,
-            key_dim: int,
-            value_dim: int,
-            p_dropout: float,
+        self,
+        model_dim: int,
+        ff_hidden_layer_dim: int,
+        num_attention_heads: int,
+        key_dim: int,
+        value_dim: int,
+        p_dropout: float,
     ):
         """
         Initialize the encoder block.
@@ -244,11 +250,13 @@ class EncoderBlock(nn.Module):
             num_heads=num_attention_heads,
             model_dim=model_dim,
             key_dim=key_dim,
-            value_dim=value_dim
+            value_dim=value_dim,
         )
         self.layer_norm_1 = nn.LayerNorm(model_dim)
         self.layer_norm_2 = nn.LayerNorm(model_dim)
-        self.ffn = FeedForwardNetwork(model_dim=model_dim, hidden_layer_dim=ff_hidden_layer_dim)
+        self.ffn = FeedForwardNetwork(
+            model_dim=model_dim, hidden_layer_dim=ff_hidden_layer_dim
+        )
 
     def forward(self, input):
         """
@@ -268,64 +276,6 @@ class EncoderBlock(nn.Module):
         return out
 
 
-class AttentionHead(nn.Module):
-    """
-    Attention head, which computes representations, based on the input elements and their relevance to each other.
-    """
-
-    def __init__(self, model_dim: int, key_dim: int, value_dim: int):
-        """
-        Initialize the attention head.
-
-        Args:
-            model_dim (int): The input and output dimension of the model.
-            key_dim (int):   The dimension of the keys in the attention mechanism.
-            value_dim (int): The dimension of the values in the attention mechanism.
-
-        """
-        super().__init__()
-        self.key_dim = key_dim
-        self.W_q = nn.Linear(in_features=model_dim, out_features=key_dim)
-        self.W_k = nn.Linear(in_features=model_dim, out_features=key_dim)
-        self.W_v = nn.Linear(in_features=model_dim, out_features=value_dim)
-        self.softmax = nn.Softmax(dim=-1)
-
-    def forward(self, input: torch.Tensor, mask_idx: Optional[int] = None,
-                encoder_output: Optional[torch.Tensor] = None) -> torch.Tensor:
-        """
-        Compute the forward pass of the AttentionLayer module.
-
-        Args:
-            input (torch.Tensor): The input tensor of shape (batch_size, context_size, model_dim).
-
-            Decoder arguments:
-            mask_idx (Optional[int]): If provided, tokens corresponding to indices >= this value won't be attended to
-                (default: None).
-            encoder_output (Optional[torch.Tensor]): Output tensor from the encoder, if provided, it will be used for
-                computing the key and value vectors in the attention mechanism (default: None).
-
-        Returns:
-            torch.Tensor: The attended values tensor of shape (batch_size, context_size, value_dim).
-        """
-
-        # Compute query (Q), key (K) and value (V) vectors.
-        Q = self.W_q(input)
-        K = self.W_k(encoder_output) if encoder_output is not None else self.W_k(input)
-        V = self.W_v(encoder_output) if encoder_output is not None else self.W_v(input)
-
-        # Compute attention weights, mask positions if mask_idx is given
-        attention_weights = Q @ K.transpose(-2, -1) / torch.sqrt(torch.tensor(self.key_dim))
-        if mask_idx:
-            attention_weights[..., mask_idx:] = -torch.inf
-
-        attention_weights = self.softmax(attention_weights)
-
-        # Compute attention matrix
-        attention = attention_weights @ V
-
-        return attention
-
-
 class MultiHeadAttention(nn.Module):
     """
     Multi-head attention module, which concatenates and processes the output of multiple attention heads.
@@ -343,15 +293,24 @@ class MultiHeadAttention(nn.Module):
 
         """
         super().__init__()
-        self.W_o = nn.Linear(in_features=key_dim * num_heads, out_features=model_dim)
+        # Linear transformations for queries, keys and values
+        self.q_linear = nn.Linear(in_features=model_dim, out_features=num_heads*key_dim)
+        self.k_linear = nn.Linear(in_features=model_dim, out_features=num_heads*key_dim)
+        self.v_linear = nn.Linear(in_features=model_dim, out_features=num_heads*value_dim)
 
-        # Create attention heads
-        self.attention_heads = nn.ModuleList([
-            AttentionHead(model_dim=model_dim, key_dim=key_dim, value_dim=value_dim) for _ in range(num_heads)
-        ])
+        self.out_linear = nn.Linear(in_features=num_heads*value_dim, out_features=model_dim)
+        self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, input: torch.Tensor, mask_idx: Optional[int] = None,
-                encoder_output: Optional[torch.Tensor] = None) -> torch.Tensor:
+        self.num_heads = num_heads
+        self.key_dim = key_dim
+        self.value_dim = value_dim
+
+    def forward(
+        self,
+        input: Tensor,
+        mask: Optional[bool] = False,
+        encoder_output: Optional[Tensor] = None,
+    ) -> Tensor:
         """
         Forward pass of the multi-head attention module.
 
@@ -359,25 +318,58 @@ class MultiHeadAttention(nn.Module):
             input (torch.Tensor): Input tensor of shape (batch_size, context_size, model_dim).
 
             Decoder arguments:
-            mask_idx (Optional[int]): If provided, tokens corresponding to indices >= this value won't be attended to
-                (default: None).
+            mask (Optional[bool]): If true, tokens are prevented to attend to subsequent positions of the sequence
+                (default: False).
             encoder_output (Optional[torch.Tensor]): Output tensor from the encoder, if provided, it will be used for
                 computing the key and value vectors in the attention mechanism (default: None).
 
         Returns:
             torch.Tensor: Output tensor of shape (batch_size, context_size, model_dim).
         """
-        # Apply each attention head and concatenate the outputs
-        head_outputs = [attention_head(input, mask_idx=mask_idx, encoder_output=encoder_output) for attention_head in
-                        self.attention_heads]
+        batch_size, context_size, model_dim = input.shape
 
-        # Concatenate the head outputs along the last dimension
-        concatenated_outputs = torch.cat(head_outputs, dim=-1)
+        # Compute query (Q), key (K) and value (V) vectors
+        Q = self.q_linear(input)
+        K = self.k_linear(input) if encoder_output is None else self.k_linear(encoder_output)
+        V = self.v_linear(input) if encoder_output is None else self.v_linear(encoder_output)
+
+        # Reshape keys, queries, and values for multi-head attention
+        Q = Q.view(batch_size, context_size, self.num_heads, self.key_dim).transpose(1, 2)
+        K = K.view(batch_size, context_size, self.num_heads, self.key_dim).transpose(1, 2)
+        V = V.view(batch_size, context_size, self.num_heads, self.value_dim).transpose(1, 2)
+
+        # Compute attention
+        attention = self.dot_product_attention(Q=Q, K=K, V=V, mask=mask)
+        attention = attention.transpose(1, 2).reshape(batch_size, context_size, self.num_heads * self.value_dim)
 
         # Transform to model dimension
-        output = self.W_o(concatenated_outputs)
+        output = self.out_linear(attention)
 
         return output
+
+    def dot_product_attention(self, Q: Tensor, K: Tensor, V: Tensor, mask: bool = False) -> Tensor:
+        """
+        Compute dot product attention.
+
+        Args:
+            Q (Tensor): Query tensor of shape (batch_size, num_heads, context_size, key_dim).
+            K (Tensor): Key tensor of shape (batch_size, num_heads, context_size, key_dim).
+            V (Tensor): Value tensor of shape (batch_size, num_heads, context_size, value_dim).
+            mask (bool): Whether to apply masking to future positions. Default is False.
+
+        Returns:
+            Tensor: Tensor of shape (batch_size, num_heads, context_size, value_dim).
+        """
+        attention_weights = Q @ K.transpose(-2, -1) / (self.key_dim ** 0.5)
+
+        # Compute attention weights, optionally, mask future positions
+        # The i'th row corresponds to the attention values of the i'th token to all other tokens.
+        if mask:
+            attention_weights += torch.triu(torch.full(attention_weights.shape[-2:], -torch.inf), diagonal=1)
+
+        attention_weights = self.softmax(attention_weights)
+        attention = attention_weights @ V
+        return attention
 
 
 class FeedForwardNetwork(nn.Module):
@@ -398,7 +390,7 @@ class FeedForwardNetwork(nn.Module):
         self.linear2 = nn.Linear(in_features=hidden_layer_dim, out_features=model_dim)
         self.relu = nn.ReLU()
 
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
+    def forward(self, input: Tensor) -> Tensor:
         """
         Forward pass of the network.
 
@@ -419,6 +411,6 @@ if __name__ == "__main__":
     positional_encoding = positional_encoding(context_size=64, embedding_dim=256)
 
     plt.pcolormesh(positional_encoding)
-    plt.xlabel('embedding dimension')
-    plt.ylabel('token position')
+    plt.xlabel("embedding dimension")
+    plt.ylabel("token position")
     plt.show()

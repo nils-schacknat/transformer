@@ -32,9 +32,9 @@ class Transformer(nn.Module):
         src_encoding = self.encoder(src_embedded)
         return src_encoding
 
-    def forward(self, src_encoding, tgt_sequence, current_token_idx):
+    def forward(self, src_encoding, tgt_sequence):
         tgt_embedded = self.tgt_embedding_layer(tgt_sequence) + self.positional_encoding
-        tgt_decoded = self.decoder(input=tgt_embedded, current_token_idx=current_token_idx, encoder_output=src_encoding)
+        tgt_decoded = self.decoder(input=tgt_embedded, encoder_output=src_encoding)
 
         tgt_decoded = tgt_decoded.reshape(-1, self.context_size*self.model_dim)
         output = self.linear(tgt_decoded)
@@ -53,7 +53,7 @@ class Transformer(nn.Module):
         tgt_sequence[:, 0] = self.bos_idx
 
         for i in range(1, self.context_size):
-            prb_next_token = self(src_encoding, tgt_sequence, i)
+            prb_next_token = self(src_encoding, tgt_sequence)
             next_token = torch.argmax(prb_next_token, dim=-1)
             tgt_sequence[:, i] = next_token
 
@@ -85,6 +85,8 @@ if __name__ == "__main__":
     transformer = Transformer(**dataset.transformer_params, **config["transformer_params"])
     transformer.eval()
 
+    print(f"Number of trainable parameters: {sum(p.numel() for p in transformer.parameters() if p.requires_grad)}")
+
     # Iterate over batches of data
     print("Batched Data:")
     for batch in data_loader:
@@ -92,3 +94,4 @@ if __name__ == "__main__":
         print(f"Input Batch: {input_batch.shape}")
         print(f"Output Batch: {transformer.generate(input_batch).shape}")
         break
+
