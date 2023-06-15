@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from translation_dataset import get_english_german_translation_dataset, split_dataset
+from translation_dataset import load_german_english_translation_dataset, split_dataset
 from torch.utils.data import DataLoader
 from model import Transformer
 from torch.utils.tensorboard import SummaryWriter
@@ -138,7 +138,7 @@ if __name__ == "__main__":
     context_size = 64
     test_size = .2
 
-    dataset = get_english_german_translation_dataset(context_size=context_size)
+    dataset = load_german_english_translation_dataset(context_size=context_size)
     train_dataset, test_dataset = split_dataset(dataset=dataset, test_size=test_size)
 
     # Create a data loader for batching

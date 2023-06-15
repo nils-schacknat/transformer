@@ -4,19 +4,19 @@ import torch
 from torch import nn, Tensor
 
 
-def positional_encoding(context_size: int, embedding_dim: int) -> torch.Tensor:
+def positional_encoding(sequence_length: int, embedding_dim: int) -> torch.Tensor:
     """
     Generate positional encoding for the input sequence.
 
     Args:
-        context_size (int): The context size.
+        sequence_length (int): The sequence length.
         embedding_dim (int): The embedding size.
 
     Returns:
-        torch.Tensor: The positional encoding tensor of shape (context_size, model_dim).
+        torch.Tensor: The positional encoding tensor of shape (sequence_length, model_dim).
 
     """
-    positions = torch.arange(0, context_size)
+    positions = torch.arange(0, sequence_length)
     dim_indices = torch.arange(0, embedding_dim)
 
     # Compute the argument matrix for the sine and cosine function.
@@ -26,7 +26,7 @@ def positional_encoding(context_size: int, embedding_dim: int) -> torch.Tensor:
     co_sine_args = get_co_sine_arg(positions.unsqueeze(1), dim_indices.unsqueeze(0))
 
     # Compute the sine or cosine, depending on whether the last dimension is even or odd.
-    positional_encoding = torch.zeros((context_size, embedding_dim))
+    positional_encoding = torch.zeros((sequence_length, embedding_dim))
     positional_encoding[:, 0::2] = torch.sin(co_sine_args[:, 0::2])
     positional_encoding[:, 1::2] = torch.cos(co_sine_args[:, 1::2])
 
@@ -75,21 +75,23 @@ class Decoder(nn.Module):
             ]
         )
 
-    def forward(self, input: Tensor, encoder_output: Tensor):
+    def forward(self, input: Tensor, encoder_output: Tensor, src_key_padding_mask: Optional[Tensor] = None):
         """
         Forward pass of the Decoder module.
 
         Args:
-            input (torch.Tensor): The input tensor of shape (batch_size, context_size, model_dim).
+            input (torch.Tensor): The input tensor of shape (batch_size, sequence_length, model_dim).
             encoder_output (torch.Tensor): The output tensor from the encoder.
+            src_key_padding_mask (Optional[torch.Tensor]): Mask tensor of shape (batch_size, sequence_length) indicating
+                the padding positions in the source sequence, padding positions should be set to 'True' (default: None).
 
         Returns:
-            torch.Tensor: The output tensor of shape (batch_size, context_size, model_dim).
+            torch.Tensor: The output tensor of shape (batch_size, sequence_length, model_dim).
 
         """
         output = input
-        for decoder_block in self.encoder_blocks:
-            output = decoder_block(output, encoder_output=encoder_output)
+        for decoder_block in self.decoder_blocks:
+            output = decoder_block(input=output, encoder_output=encoder_output, src_key_padding_mask=src_key_padding_mask)
 
         return output
 
@@ -139,21 +141,23 @@ class DecoderBlock(nn.Module):
             model_dim=model_dim, hidden_layer_dim=ff_hidden_layer_dim
         )
 
-    def forward(self, input: Tensor, encoder_output: Tensor):
+    def forward(self, input: Tensor, encoder_output: Tensor, src_key_padding_mask: Optional[Tensor] = None):
         """
         Forward pass of the decoder block.
 
         Args:
-            input (torch.Tensor): The input tensor of shape (batch_size, context_size, model_dim).
+            input (torch.Tensor): The input tensor of shape (batch_size, sequence_length, model_dim).
             encoder_output (torch.Tensor): The output tensor from the encoder.
+            src_key_padding_mask (Optional[torch.Tensor]): Mask tensor of shape (batch_size, sequence_length) indicating
+                the padding positions in the source sequence, padding positions should be set to 'True' (default: None).
 
         Returns:
-            torch.Tensor: The output tensor of shape (batch_size, context_size, model_dim).
+            torch.Tensor: The output tensor of shape (batch_size, sequence_length, model_dim).
 
         """
-        x = input + self.masked_multi_head_attention(input, mask=True)
+        x = input + self.masked_multi_head_attention(input, mask_future_positions=True)
         x = self.layer_norm_1(x)
-        y = input + self.multi_head_attention(x, encoder_output=encoder_output)
+        y = input + self.multi_head_attention(x, encoder_output=encoder_output, src_key_padding_mask=src_key_padding_mask)
         y = self.layer_norm_2(y)
         out = x + self.ffn(y)
         out = self.layer_norm_3(out)
@@ -202,20 +206,22 @@ class Encoder(nn.Module):
             ]
         )
 
-    def forward(self, input):
+    def forward(self, input: Tensor, src_key_padding_mask: Optional[Tensor] = None):
         """
         Forward pass of the Encoder module.
 
         Args:
-            input (torch.Tensor): The input tensor of shape (batch_size, context_size, model_dim).
+            input (torch.Tensor): The input tensor of shape (batch_size, sequence_length, model_dim).
+            src_key_padding_mask (Optional[torch.Tensor]): Mask tensor of shape (batch_size, sequence_length) indicating
+                the padding positions in the source sequence, padding positions should be set to 'True' (default: None).
 
         Returns:
-            torch.Tensor: The output tensor of shape (batch_size, context_size, model_dim).
+            torch.Tensor: The output tensor of shape (batch_size, sequence_length, model_dim).
 
         """
         output = input
         for encoder_block in self.encoder_blocks:
-            output = encoder_block(output)
+            output = encoder_block(input=output, src_key_padding_mask=src_key_padding_mask)
 
         return output
 
@@ -258,18 +264,20 @@ class EncoderBlock(nn.Module):
             model_dim=model_dim, hidden_layer_dim=ff_hidden_layer_dim
         )
 
-    def forward(self, input):
+    def forward(self, input: Tensor, src_key_padding_mask: Optional[Tensor] = None):
         """
         Forward pass of the encoder block.
 
         Args:
-            input (torch.Tensor): The input tensor of shape (batch_size, context_size, model_dim).
+            input (torch.Tensor): The input tensor of shape (batch_size, sequence_length, model_dim).
+            src_key_padding_mask (Optional[torch.Tensor]): Mask tensor of shape (batch_size, sequence_length) indicating
+                the padding positions in the source sequence, padding positions should be set to 'True' (default: None).
 
         Returns:
-            torch.Tensor: The output tensor of shape (batch_size, context_size, model_dim).
+            torch.Tensor: The output tensor of shape (batch_size, sequence_length, model_dim).
 
         """
-        x = input + self.multi_head_attention(input)
+        x = input + self.multi_head_attention(input=input, src_key_padding_mask=src_key_padding_mask)
         x = self.layer_norm_1(x)
         out = x + self.ffn(x)
         out = self.layer_norm_2(out)
@@ -277,10 +285,10 @@ class EncoderBlock(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
+
     """
     Multi-head attention module, which concatenates and processes the output of multiple attention heads.
     """
-
     def __init__(self, num_heads: int, model_dim: int, key_dim: int, value_dim: int):
         """
         Initialize the multi-head attention module.
@@ -306,27 +314,33 @@ class MultiHeadAttention(nn.Module):
         self.value_dim = value_dim
 
     def forward(
-        self,
-        input: Tensor,
-        mask: Optional[bool] = False,
-        encoder_output: Optional[Tensor] = None,
+            self,
+            input: Tensor,
+            src_key_padding_mask: Optional[Tensor] = None,
+            mask_future_positions: Optional[bool] = False,
+            encoder_output: Optional[Tensor] = None,
     ) -> Tensor:
         """
         Forward pass of the multi-head attention module.
 
         Args:
-            input (torch.Tensor): Input tensor of shape (batch_size, context_size, model_dim).
+            input (torch.Tensor): Input tensor of shape (batch_size, sequence_length, model_dim).
+            src_key_padding_mask (Optional[torch.Tensor]): Mask tensor of shape (batch_size, sequence_length) indicating
+                the padding positions in the source sequence, padding positions should be set to 'True' (default: None).
 
             Decoder arguments:
-            mask (Optional[bool]): If true, tokens are prevented to attend to subsequent positions of the sequence
-                (default: False).
+            mask_future_positions (Optional[bool]): If true, tokens are prevented from attending to subsequent positions
+                of the sequence (default: False).
             encoder_output (Optional[torch.Tensor]): Output tensor from the encoder, if provided, it will be used for
                 computing the key and value vectors in the attention mechanism (default: None).
 
         Returns:
-            torch.Tensor: Output tensor of shape (batch_size, context_size, model_dim).
+            torch.Tensor: Output tensor of shape (batch_size, sequence_length, model_dim).
         """
-        batch_size, context_size, model_dim = input.shape
+        # The sequence length of the input
+        batch_size, sequence_length, model_dim = input.shape
+        # The sequence length of the keys and values
+        key_value_sequence_length = encoder_output.shape[1] if encoder_output is not None else sequence_length
 
         # Compute query (Q), key (K) and value (V) vectors
         Q = self.q_linear(input)
@@ -334,38 +348,45 @@ class MultiHeadAttention(nn.Module):
         V = self.v_linear(input) if encoder_output is None else self.v_linear(encoder_output)
 
         # Reshape keys, queries, and values for multi-head attention
-        Q = Q.view(batch_size, context_size, self.num_heads, self.key_dim).transpose(1, 2)
-        K = K.view(batch_size, context_size, self.num_heads, self.key_dim).transpose(1, 2)
-        V = V.view(batch_size, context_size, self.num_heads, self.value_dim).transpose(1, 2)
+        Q = Q.view(batch_size, sequence_length, self.num_heads, self.key_dim).transpose(1, 2)
+        K = K.view(batch_size, key_value_sequence_length, self.num_heads, self.key_dim).transpose(1, 2)
+        V = V.view(batch_size, key_value_sequence_length, self.num_heads, self.value_dim).transpose(1, 2)
 
         # Compute attention
-        attention = self.dot_product_attention(Q=Q, K=K, V=V, mask=mask)
-        attention = attention.transpose(1, 2).reshape(batch_size, context_size, self.num_heads * self.value_dim)
+        attention = self.dot_product_attention(Q=Q, K=K, V=V, mask_future_positions=mask_future_positions, src_key_padding_mask=src_key_padding_mask)
+        attention = attention.transpose(1, 2).reshape(batch_size, sequence_length, self.num_heads * self.value_dim)
 
         # Transform to model dimension
         output = self.out_linear(attention)
 
         return output
 
-    def dot_product_attention(self, Q: Tensor, K: Tensor, V: Tensor, mask: bool = False) -> Tensor:
+    def dot_product_attention(self, Q: Tensor, K: Tensor, V: Tensor, mask_future_positions: bool = False, src_key_padding_mask: Tensor = None) -> Tensor:
         """
         Compute dot product attention.
 
         Args:
-            Q (Tensor): Query tensor of shape (batch_size, num_heads, context_size, key_dim).
-            K (Tensor): Key tensor of shape (batch_size, num_heads, context_size, key_dim).
-            V (Tensor): Value tensor of shape (batch_size, num_heads, context_size, value_dim).
-            mask (bool): Whether to apply masking to future positions. Default is False.
+            Q (Tensor): Query tensor of shape (batch_size, num_heads, sequence_length, key_dim).
+            K (Tensor): Key tensor of shape (batch_size, num_heads, key_value_sequence_length, key_dim).
+            V (Tensor): Value tensor of shape (batch_size, num_heads, key_value_sequence_length, value_dim).
+            mask_future_positions (Optional[bool]): If true, tokens are prevented from attending to subsequent positions
+                of the sequence (default: False).
+            src_key_padding_mask (Optional[torch.Tensor]): Mask tensor of shape (batch_size, sequence_length) indicating
+                the padding positions in the source sequence, padding positions should be set to 'True' (default: None).
 
         Returns:
-            Tensor: Tensor of shape (batch_size, num_heads, context_size, value_dim).
+            Tensor: Tensor of shape (batch_size, num_heads, sequence_length, value_dim).
         """
         attention_weights = Q @ K.transpose(-2, -1) / (self.key_dim ** 0.5)
 
-        # Compute attention weights, optionally, mask future positions
+        # Compute attention weights, optionally, mask future/padding positions
         # The i'th row corresponds to the attention values of the i'th token to all other tokens.
-        if mask:
+        # Dim 0 corresponds to queries and dim 1 to keys.
+        if mask_future_positions:
             attention_weights += torch.triu(torch.full(attention_weights.shape[-2:], -torch.inf), diagonal=1)
+
+        if src_key_padding_mask is not None:
+            attention_weights += (src_key_padding_mask * -torch.inf).unsqueeze(1).unsqueeze(1)
 
         attention_weights = self.softmax(attention_weights)
         attention = attention_weights @ V
@@ -395,10 +416,10 @@ class FeedForwardNetwork(nn.Module):
         Forward pass of the network.
 
         Args:
-            input (torch.Tensor): Input tensor of shape (batch_size, context_size, model_dim).
+            input (torch.Tensor): Input tensor of shape (batch_size, sequence_length, model_dim).
 
         Returns:
-            torch.Tensor: Output tensor of shape (batch_size, context_size, model_dim).
+            torch.Tensor: Output tensor of shape (batch_size, sequence_length, model_dim).
 
         """
         return self.linear2(self.relu(self.linear1(input)))
@@ -408,7 +429,7 @@ if __name__ == "__main__":
     # Visualize the positional encoding.
     import matplotlib.pyplot as plt
 
-    positional_encoding = positional_encoding(context_size=64, embedding_dim=256)
+    positional_encoding = positional_encoding(sequence_length=64, embedding_dim=256)
 
     plt.pcolormesh(positional_encoding)
     plt.xlabel("embedding dimension")
