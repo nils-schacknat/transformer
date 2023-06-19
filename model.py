@@ -6,18 +6,34 @@ from transformer_components import Encoder, Decoder, positional_encoding
 class Transformer(nn.Module):
     def __init__(
         self,
-        source_vocab_size,
-        target_vocab_size,
-        model_dim,
-        stack_size,
-        ff_hidden_layer_dim,
-        num_attention_heads,
-        key_dim,
-        value_dim,
-        p_dropout,
-        bos_idx,
-        eos_idx,
+        source_vocab_size: int,
+        target_vocab_size: int,
+        model_dim: int,
+        stack_size: int,
+        ff_hidden_layer_dim: int,
+        num_attention_heads: int,
+        key_dim: int,
+        value_dim: int,
+        p_dropout: float,
+        bos_idx: int,
+        eos_idx: int,
     ):
+        """
+        Initializes the Transformer model.
+
+        Args:
+            source_vocab_size (int): Size of the source vocabulary.
+            target_vocab_size (int): Size of the target vocabulary.
+            model_dim (int): Dimensionality of the model.
+            stack_size (int): Number of encoder and decoder layers to stack.
+            ff_hidden_layer_dim (int): Dimensionality of the feed-forward hidden layer.
+            num_attention_heads (int): Number of attention heads.
+            key_dim (int): Dimensionality of the key vectors in self-attention.
+            value_dim (int): Dimensionality of the value vectors in self-attention.
+            p_dropout (float): Dropout rate.
+            bos_idx (int): Index of the beginning-of-sequence token.
+            eos_idx (int): Index of the end-of-sequence token.
+        """
         super().__init__()
         self.src_embedding_layer = nn.Embedding(
             num_embeddings=source_vocab_size, embedding_dim=model_dim
@@ -46,25 +62,70 @@ class Transformer(nn.Module):
 
         self.model_dim = model_dim
 
-    def encode_source(self, src_sequence, src_key_padding_mask=None):
-        src_embedded = self.src_embedding_layer(src_sequence) * self.model_dim**.5 + positional_encoding(
-            sequence_length=src_sequence.shape[-1], embedding_dim=self.model_dim,
+    def encode_source(self, src_sequence: torch.Tensor, src_key_padding_mask: torch.Tensor = None) -> torch.Tensor:
+        """
+        Encodes the source sequence.
+
+        Args:
+            src_sequence (torch.Tensor): Source sequence tensor.
+            src_key_padding_mask (torch.Tensor, optional): Mask indicating padding positions in the source sequence.
+
+        Returns:
+            torch.Tensor: Encoded source tensor.
+        """
+        src_embedded = self.src_embedding_layer(src_sequence) * self.model_dim ** 0.5
+        src_embedded += positional_encoding(sequence_length=src_sequence.shape[-1], embedding_dim=self.model_dim)
+
+        src_encoding = self.encoder(
+            input_tensor=src_embedded, src_key_padding_mask=src_key_padding_mask
         )
-        src_encoding = self.encoder(input=src_embedded, src_key_padding_mask=src_key_padding_mask)
         return src_encoding
 
-    def forward(self, src_encoding, tgt_sequence, src_key_padding_mask=None):
-        tgt_embedded = self.tgt_embedding_layer(tgt_sequence) * self.model_dim**.5 + positional_encoding(
-            sequence_length=tgt_sequence.shape[-1], embedding_dim=self.model_dim
+    def forward(
+        self, src_encoding: torch.Tensor, tgt_sequence: torch.Tensor, src_key_padding_mask: torch.Tensor = None
+    ) -> torch.Tensor:
+        """
+        Performs the forward pass of the Transformer model.
+
+        Args:
+            src_encoding (torch.Tensor): Encoded source tensor.
+            tgt_sequence (torch.Tensor): Target sequence tensor.
+            src_key_padding_mask (torch.Tensor, optional): Mask indicating padding positions in the source sequence.
+
+        Returns:
+            torch.Tensor: Predicted probabilities of the next token.
+        """
+        tgt_embedded = self.tgt_embedding_layer(tgt_sequence) * self.model_dim ** 0.5
+        tgt_embedded += positional_encoding(sequence_length=tgt_sequence.shape[-1], embedding_dim=self.model_dim)
+
+        tgt_decoded = self.decoder(
+            input_tensor=tgt_embedded,
+            encoder_output=src_encoding,
+            src_key_padding_mask=src_key_padding_mask,
         )
-        tgt_decoded = self.decoder(input=tgt_embedded, encoder_output=src_encoding, src_key_padding_mask=src_key_padding_mask)
 
         output = self.linear(tgt_decoded)
         prb_next_token = self.softmax(output)
 
         return prb_next_token
 
-    def generate(self, src_sequence, src_key_padding_mask=None, max_len=100):
+    def generate(
+        self,
+        src_sequence: torch.Tensor,
+        src_key_padding_mask: torch.Tensor = None,
+        max_len: int = 100,
+    ) -> torch.Tensor:
+        """
+        Generates target sequences given source sequences.
+
+        Args:
+            src_sequence (torch.Tensor): Source sequence tensor.
+            src_key_padding_mask (torch.Tensor, optional): Mask indicating padding positions in the source sequence.
+            max_len (int, optional): Maximum length of the generated sequences.
+
+        Returns:
+            torch.Tensor: Generated target sequences.
+        """
         if src_sequence.ndim == 1:
             src_sequence = src_sequence.unsqueeze(0)
 
@@ -101,11 +162,8 @@ if __name__ == "__main__":
     transformer = Transformer(
         **datapipe.tokenizer_params, **config["transformer_params"]
     )
-    transformer.eval()
 
-    print(
-        f"Number of trainable parameters: {sum(p.numel() for p in transformer.parameters() if p.requires_grad)}"
-    )
+    print(f"Number of trainable parameters: {sum(p.numel() for p in transformer.parameters() if p.requires_grad)}")
 
     # Iterate over batches of data
     print("Batched Data:")
