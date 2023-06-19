@@ -1,7 +1,7 @@
 import yaml
 import sentencepiece as spm
 import torch
-from torch.utils.data import random_split
+from torch.utils.data import random_split, DataLoader
 
 
 def load_config(path_to_config):
@@ -28,17 +28,3 @@ def split_dataset(dataset, test_size):
     train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
 
     return train_dataset, test_dataset
-
-
-def collate_fn(batch):
-    inputs, outputs = zip(*batch)
-
-    # Pad inputs and outputs to the length of the longest sequence
-    max_length_inputs = max(len(seq) for seq in inputs)
-    max_length_outputs = max(len(seq) for seq in outputs)
-
-    padded_inputs = [seq + [-1] * (max_length_inputs - len(seq)) for seq in inputs]
-    padded_outputs = [seq + [-1] * (max_length_outputs - len(seq)) for seq in outputs]
-
-    return torch.IntTensor(padded_inputs), torch.IntTensor(padded_outputs)
-

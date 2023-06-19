@@ -85,29 +85,21 @@ class Transformer(nn.Module):
 
 
 if __name__ == "__main__":
-    from translation_dataset import load_german_english_translation_dataset
-    from torch.utils.data import DataLoader
-    import yaml
+    from datapipe import TranslationDatapipe
+    from util import load_config
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using {device}")
 
     # Load config
-    yaml_file = "config.yaml"
+    config = load_config("config.yaml")
 
-    with open(yaml_file, "r") as f:
-        config = yaml.safe_load(f)
-
-    # Load the dataset
-    dataset = load_german_english_translation_dataset()
-
-    # Create a data loader for batching
-    batch_size = 3
-    data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    # Load the datapipe
+    datapipe = TranslationDatapipe(**config["datapipe"], **config["tokenizer"])
 
     # Create the model
     transformer = Transformer(
-        **dataset.transformer_params, **config["transformer_params"]
+        **datapipe.tokenizer_params, **config["transformer_params"]
     )
     transformer.eval()
 
@@ -117,9 +109,10 @@ if __name__ == "__main__":
 
     # Iterate over batches of data
     print("Batched Data:")
-    for batch in data_loader:
-        input_batch, target_batch = batch
-        src_key_padding_mask = torch.rand(input_batch.shape) < 0.5
-        print(f"Input Batch: {input_batch.shape}")
-        print(f"Output Batch: {transformer.generate(input_batch, src_key_padding_mask).shape}")
+    for batch in datapipe:
+        source_batch, target_batch = batch
+        src_key_padding_mask = source_batch == datapipe.source_tokenizer.pad_id()
+        print(f"Input Batch: {source_batch}")
+        print(f"Padding_mask: {src_key_padding_mask}")
+        print(f"Output Batch: {transformer.generate(source_batch, src_key_padding_mask).shape}")
         break
