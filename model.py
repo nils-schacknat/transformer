@@ -62,7 +62,14 @@ class Transformer(nn.Module):
 
         self.model_dim = model_dim
 
-    def encode_source(self, src_sequence: torch.Tensor, src_key_padding_mask: torch.Tensor = None) -> torch.Tensor:
+        # Initialize the weights
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+
+    def encode_source(
+        self, src_sequence: torch.Tensor, src_key_padding_mask: torch.Tensor = None
+    ) -> torch.Tensor:
         """
         Encodes the source sequence.
 
@@ -73,8 +80,10 @@ class Transformer(nn.Module):
         Returns:
             torch.Tensor: Encoded source tensor.
         """
-        src_embedded = self.src_embedding_layer(src_sequence) * self.model_dim ** 0.5
-        src_embedded += positional_encoding(sequence_length=src_sequence.shape[-1], embedding_dim=self.model_dim)
+        src_embedded = self.src_embedding_layer(src_sequence) * self.model_dim**0.5
+        src_embedded += positional_encoding(
+            sequence_length=src_sequence.shape[-1], embedding_dim=self.model_dim
+        )
 
         src_encoding = self.encoder(
             input_tensor=src_embedded, src_key_padding_mask=src_key_padding_mask
@@ -82,7 +91,10 @@ class Transformer(nn.Module):
         return src_encoding
 
     def forward(
-        self, src_encoding: torch.Tensor, tgt_sequence: torch.Tensor, src_key_padding_mask: torch.Tensor = None
+        self,
+        src_encoding: torch.Tensor,
+        tgt_sequence: torch.Tensor,
+        src_key_padding_mask: torch.Tensor = None,
     ) -> torch.Tensor:
         """
         Performs the forward pass of the Transformer model.
@@ -95,8 +107,10 @@ class Transformer(nn.Module):
         Returns:
             torch.Tensor: Predicted probabilities of the next token.
         """
-        tgt_embedded = self.tgt_embedding_layer(tgt_sequence) * self.model_dim ** 0.5
-        tgt_embedded += positional_encoding(sequence_length=tgt_sequence.shape[-1], embedding_dim=self.model_dim)
+        tgt_embedded = self.tgt_embedding_layer(tgt_sequence) * self.model_dim**0.5
+        tgt_embedded += positional_encoding(
+            sequence_length=tgt_sequence.shape[-1], embedding_dim=self.model_dim
+        )
 
         tgt_decoded = self.decoder(
             input_tensor=tgt_embedded,
@@ -135,7 +149,9 @@ class Transformer(nn.Module):
         tgt_sequence = torch.full((batch_size, 1), self.bos_idx)
 
         for _ in range(max_len):
-            prb_next_token = self(src_encoding, tgt_sequence, src_key_padding_mask)[:, -1]
+            prb_next_token = self(src_encoding, tgt_sequence, src_key_padding_mask)[
+                :, -1
+            ]
             next_token = torch.argmax(prb_next_token, dim=-1)
             tgt_sequence = torch.cat((tgt_sequence, next_token.unsqueeze(1)), dim=1)
 
@@ -163,7 +179,9 @@ if __name__ == "__main__":
         **datapipe.tokenizer_params, **config["transformer_params"]
     )
 
-    print(f"Number of trainable parameters: {sum(p.numel() for p in transformer.parameters() if p.requires_grad)}")
+    print(
+        f"Number of trainable parameters: {sum(p.numel() for p in transformer.parameters() if p.requires_grad)}"
+    )
 
     # Iterate over batches of data
     print("Batched Data:")
@@ -172,5 +190,7 @@ if __name__ == "__main__":
         src_key_padding_mask = source_batch == datapipe.source_tokenizer.pad_id()
         print(f"Input Batch: {source_batch}")
         print(f"Padding_mask: {src_key_padding_mask}")
-        print(f"Output Batch: {transformer.generate(source_batch, src_key_padding_mask).shape}")
+        print(
+            f"Output Batch: {transformer.generate(source_batch, src_key_padding_mask).shape}"
+        )
         break

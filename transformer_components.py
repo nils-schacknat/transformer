@@ -165,6 +165,7 @@ class DecoderBlock(nn.Module):
         self.ffn = FeedForwardNetwork(
             model_dim=model_dim, hidden_layer_dim=ff_hidden_layer_dim
         )
+        self.dropout = nn.Dropout(p_dropout)
 
     def forward(
         self,
@@ -185,17 +186,23 @@ class DecoderBlock(nn.Module):
             torch.Tensor: The output tensor of shape (batch_size, sequence_length, model_dim).
 
         """
-        x = input_tensor + self.masked_multi_head_attention(
-            input_tensor, mask_future_positions=True
+        x = input_tensor + self.dropout(
+            self.masked_multi_head_attention(input_tensor, mask_future_positions=True)
         )
         x = self.layer_norm_1(x)
-        y = input_tensor + self.multi_head_attention(
-            x, encoder_output=encoder_output, src_key_padding_mask=src_key_padding_mask
+
+        x += self.dropout(
+            self.multi_head_attention(
+                x,
+                encoder_output=encoder_output,
+                src_key_padding_mask=src_key_padding_mask,
+            )
         )
-        y = self.layer_norm_2(y)
-        output_tensor = x + self.ffn(y)
-        output_tensor = self.layer_norm_3(output_tensor)
-        return output_tensor
+        x = self.layer_norm_2(x)
+
+        x += self.dropout(self.ffn(x))
+        x = self.layer_norm_3(x)
+        return x
 
 
 class Encoder(nn.Module):
@@ -301,6 +308,7 @@ class EncoderBlock(nn.Module):
         self.ffn = FeedForwardNetwork(
             model_dim=model_dim, hidden_layer_dim=ff_hidden_layer_dim
         )
+        self.dropout = nn.Dropout(p_dropout)
 
     def forward(
         self, input_tensor: Tensor, src_key_padding_mask: Optional[Tensor] = None
@@ -317,13 +325,16 @@ class EncoderBlock(nn.Module):
             torch.Tensor: The output tensor of shape (batch_size, sequence_length, model_dim).
 
         """
-        x = input_tensor + self.multi_head_attention(
-            input_tensor=input_tensor, src_key_padding_mask=src_key_padding_mask
+        x = input_tensor + self.dropout(
+            self.multi_head_attention(
+                input_tensor=input_tensor, src_key_padding_mask=src_key_padding_mask
+            )
         )
         x = self.layer_norm_1(x)
-        output_tensor = x + self.ffn(x)
-        output_tensor = self.layer_norm_2(output_tensor)
-        return output_tensor
+
+        x += self.dropout(self.ffn(x))
+        x = self.layer_norm_2(x)
+        return x
 
 
 class MultiHeadAttention(nn.Module):
@@ -472,7 +483,9 @@ class MultiHeadAttention(nn.Module):
 
         if src_key_padding_mask is not None:
             attention_weights += (
-                (torch.where(src_key_padding_mask, -torch.inf, 0)).unsqueeze(1).unsqueeze(1)
+                (torch.where(src_key_padding_mask, -torch.inf, 0))
+                .unsqueeze(1)
+                .unsqueeze(1)
             )
 
         attention_weights = self.softmax(attention_weights)
