@@ -55,7 +55,6 @@ class Transformer(nn.Module):
         self.decoder = Decoder(**encoder_decoder_args)
 
         self.linear = nn.Linear(in_features=model_dim, out_features=target_vocab_size)
-        self.softmax = nn.Softmax(dim=-1)
 
         self.bos_idx = bos_idx
         self.eos_idx = eos_idx
@@ -81,7 +80,7 @@ class Transformer(nn.Module):
             torch.Tensor: Encoded source tensor.
         """
         src_embedded = self.src_embedding_layer(src_sequence) * self.model_dim**0.5
-        src_embedded += positional_encoding(
+        src_embedded = src_embedded + positional_encoding(
             sequence_length=src_sequence.shape[-1], embedding_dim=self.model_dim
         )
 
@@ -108,7 +107,7 @@ class Transformer(nn.Module):
             torch.Tensor: Predicted probabilities of the next token.
         """
         tgt_embedded = self.tgt_embedding_layer(tgt_sequence) * self.model_dim**0.5
-        tgt_embedded += positional_encoding(
+        tgt_embedded = tgt_embedded + positional_encoding(
             sequence_length=tgt_sequence.shape[-1], embedding_dim=self.model_dim
         )
 
@@ -118,16 +117,15 @@ class Transformer(nn.Module):
             src_key_padding_mask=src_key_padding_mask,
         )
 
-        output = self.linear(tgt_decoded)
-        prb_next_token = self.softmax(output)
+        logits = self.linear(tgt_decoded)
 
-        return prb_next_token
+        return logits
 
     def generate(
         self,
         src_sequence: torch.Tensor,
         src_key_padding_mask: torch.Tensor = None,
-        max_len: int = 100,
+        max_len: int = 128,
     ) -> torch.Tensor:
         """
         Generates target sequences given source sequences.
@@ -149,10 +147,10 @@ class Transformer(nn.Module):
         tgt_sequence = torch.full((batch_size, 1), self.bos_idx)
 
         for _ in range(max_len):
-            prb_next_token = self(src_encoding, tgt_sequence, src_key_padding_mask)[
+            logits = self(src_encoding, tgt_sequence, src_key_padding_mask)[
                 :, -1
             ]
-            next_token = torch.argmax(prb_next_token, dim=-1)
+            next_token = torch.argmax(logits, dim=-1)
             tgt_sequence = torch.cat((tgt_sequence, next_token.unsqueeze(1)), dim=1)
 
             if torch.any(tgt_sequence == self.eos_idx, dim=1).all():

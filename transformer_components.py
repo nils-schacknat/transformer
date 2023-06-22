@@ -191,7 +191,7 @@ class DecoderBlock(nn.Module):
         )
         x = self.layer_norm_1(x)
 
-        x += self.dropout(
+        x = x + self.dropout(
             self.multi_head_attention(
                 x,
                 encoder_output=encoder_output,
@@ -200,7 +200,7 @@ class DecoderBlock(nn.Module):
         )
         x = self.layer_norm_2(x)
 
-        x += self.dropout(self.ffn(x))
+        x = x + self.dropout(self.ffn(x))
         x = self.layer_norm_3(x)
         return x
 
@@ -332,7 +332,7 @@ class EncoderBlock(nn.Module):
         )
         x = self.layer_norm_1(x)
 
-        x += self.dropout(self.ffn(x))
+        x = x + self.dropout(self.ffn(x))
         x = self.layer_norm_2(x)
         return x
 
@@ -477,12 +477,12 @@ class MultiHeadAttention(nn.Module):
         # The i'th row corresponds to the attention values of the i'th token to all other tokens.
         # Dim 0 corresponds to queries and dim 1 to keys.
         if mask_future_positions:
-            attention_weights += torch.triu(
+            attention_weights = attention_weights + torch.triu(
                 torch.full(attention_weights.shape[-2:], -torch.inf), diagonal=1
             )
 
         if src_key_padding_mask is not None:
-            attention_weights += (
+            attention_weights = attention_weights + (
                 (torch.where(src_key_padding_mask, -torch.inf, 0))
                 .unsqueeze(1)
                 .unsqueeze(1)

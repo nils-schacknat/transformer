@@ -1,3 +1,6 @@
+import copy
+import fileinput
+
 from torchdata.datapipes.iter import IterableWrapper, FileOpener
 import torchtext.transforms as T
 import torch
@@ -45,6 +48,7 @@ class TranslationDatapipe:
         self.datapipe = self.combine_datapipes(
             source_datapipe=self.source_datapipe, target_datapipe=self.target_datapipe
         )
+        self.datapipe = self.datapipe.set_length(self.compute_len(source_file=source_file, target_file=target_file))
 
         # Parameters of the tokenizers
         self.tokenizer_params = dict(
@@ -53,6 +57,14 @@ class TranslationDatapipe:
             bos_idx=self.target_tokenizer.bos_id(),
             eos_idx=self.target_tokenizer.eos_id(),
         )
+
+    @staticmethod
+    def compute_len(source_file: str, target_file: str):
+        total_len = 0
+        for line_src, line_tgt in zip(fileinput.input(source_file), fileinput.input(target_file)):
+            if line_src.strip() != '' and line_tgt.strip() != '':
+                total_len += 1
+        return total_len
 
     @staticmethod
     def create_datapipe(file: str, tokenizer) -> IterableWrapper:
@@ -146,6 +158,21 @@ class TranslationDatapipe:
             Tuple[torch.Tensor, torch.Tensor]: Tuple of source and target sequences as tensors.
         """
         return next(iter(self.datapipe))
+
+    def __len__(self):
+        return len(self.datapipe)
+
+    def random_split(self, test_size: float):
+        assert 0 < test_size < 1
+        train_pipe, test_pipe = self.datapipe.random_split(weights={"train": 1-test_size, "test": test_size}, seed=0)
+
+        train_translation_datapipe = copy.deepcopy(self)
+        train_translation_datapipe.datapipe = train_pipe
+
+        test_translation_datapipe = copy.deepcopy(self)
+        test_translation_datapipe.datapipe = test_pipe
+
+        return train_translation_datapipe, test_translation_datapipe
 
 
 if __name__ == "__main__":
