@@ -162,9 +162,9 @@ class TranslationDatapipe:
     def __len__(self):
         return len(self.datapipe)
 
-    def random_split(self, test_size: float):
-        assert 0 < test_size < 1
-        train_pipe, test_pipe = self.datapipe.random_split(weights={"train": 1-test_size, "test": test_size}, seed=0)
+    def random_split(self, p_test: float):
+        assert 0 < p_test < 1
+        train_pipe, test_pipe = self.datapipe.random_split(weights={"train": 1-p_test, "test": p_test}, seed=0)
 
         train_translation_datapipe = copy.deepcopy(self)
         train_translation_datapipe.datapipe = train_pipe

@@ -12,6 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 from datapipe import TranslationDatapipe
 from torchtext.data import metrics
 import datetime
+from util import strip_tokens_after_eos
 
 
 class Trainer:
@@ -60,6 +61,7 @@ class Trainer:
             "train_loss": [],
             "bleu_score": [],
         }
+        self.current_bleu_score = torch.nan
         if run_identifier is None:
             now = datetime.datetime.now()
             run_identifier = now.strftime("%Y-%m-%d-%H%M")
@@ -106,8 +108,9 @@ class Trainer:
 
         self.metrics["train_loss"].append(train_loss)
         self.writer.add_scalar("loss", train_loss, self.training_step)
+        self.writer.flush()
 
-    def validate(self) -> None:
+    def validate(self, num_validation_steps: int) -> None:
         """
         Validate by computing the BLEU score on the validation set.
         """
@@ -115,10 +118,12 @@ class Trainer:
         bleu_score_list = []
 
         with torch.no_grad():
-            for inputs, targets in self.val_pipe:
+            pbar = tqdm(total=num_validation_steps, ncols=120, desc="Evaluating", leave=False)
+            pbar.update(1)
+            for i, (inputs, targets) in enumerate(self.val_pipe):
                 inputs, targets = inputs.to(self.device), targets.to(self.device)
                 src_key_padding_mask = inputs == self.train_pipe.source_tokenizer.pad_id()
-                outputs = self.model.generate(src_sequence=inputs, src_key_padding_mask=src_key_padding_mask)
+                outputs = self.model.generate(src_sequence=inputs, src_key_padding_mask=src_key_padding_mask, max_len=2)
 
                 targets_processed = strip_tokens_after_eos(targets, val_pipe.target_tokenizer.eos_id())
                 targets_processed = [val_pipe.target_tokenizer.id_to_piece(s) for s in targets_processed]
@@ -127,23 +132,28 @@ class Trainer:
 
                 # Calculate the BLEU score
                 bleu_score = metrics.bleu_score(outputs_processed, targets_processed)
+                self.current_bleu_score = bleu_score
 
                 bleu_score_list.append(bleu_score)
+                pbar.update(1)
+                if i == num_validation_steps - 1:
+                    break
 
         bleu_score = np.mean(bleu_score_list)
         self.metrics["bleu_score"].append((bleu_score, self.training_step))
 
         self.writer.add_scalar("bleu", bleu_score, self.training_step)
 
-    def train(self, num_training_steps: int, num_validation_runs: int) -> None:
+    def train(self, num_training_steps: int, num_validation_steps: int, num_validation_runs: int) -> None:
         """
         Trains the model for the specified number of training steps.
 
         Args:
-            num_training_steps (int): Number of training steps to train the model.
+            num_training_steps (int): Number of training steps/batches.
+            num_validation_steps (int): Number of validation steps/batches.
             num_validation_runs (int): Number of validation runs during training.
         """
-        pbar = tqdm(total=num_training_steps, ncols=80, desc="Training")
+        pbar = tqdm(total=num_training_steps, ncols=120, desc="Training")
         pbar.update(1)
         while self.training_step < num_training_steps:
             for inputs, targets in self.train_pipe:
@@ -152,12 +162,12 @@ class Trainer:
                     break
 
                 self.train_step(inputs=inputs, targets=targets)
-                pbar.set_postfix({"Loss": self.metrics["train_loss"][-1]})
+                pbar.set_postfix({"loss": self.metrics["train_loss"][-1], "bleu_score": self.current_bleu_score})
                 pbar.update(1)
 
                 if self.training_step % (num_training_steps // num_validation_runs) == 0:
                     pbar.set_postfix({"Validating": "..."})
-                    self.validate()
+                    self.validate(num_validation_steps)
                     self.save_checkpoint(os.path.join(self.run_dir, f"checkpoint_{self.training_step}"))
 
         self.writer.close()
@@ -178,7 +188,9 @@ class Trainer:
 
 
 if __name__ == "__main__":
-    from util import load_config, strip_tokens_after_eos
+    from util import load_config
+    import os
+    import time
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using {device}")
@@ -188,9 +200,7 @@ if __name__ == "__main__":
 
     # Load the datapipe
     datapipe = TranslationDatapipe(**config["datapipe"], **config["tokenizer"])
-    train_pipe, val_pipe = datapipe.random_split(
-        test_size=config["test_size"]
-    )
+    train_pipe, val_pipe = datapipe.random_split(config["p_test"])
 
     # Create the model
     transformer = Transformer(
@@ -204,4 +214,7 @@ if __name__ == "__main__":
         device=device,
         **config["training"]
     )
-    trainer.train(100, 10)
+
+    os.system(f"tensorboard --logdir={trainer.run_dir} &")
+    time.sleep(5)
+    trainer.train(**config["num_steps"])

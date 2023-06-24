@@ -1,0 +1,29 @@
+transformer_params:
+  stack_size: 6               # Encoder / decoder stack size
+  model_dim: 256              # Output dim of each model (sub) layer
+  ff_hidden_layer_dim: 2048   # FFN hidden layer size
+  num_attention_heads: 8      # Number of attention heads
+  key_dim: 32                 # Key dim
+  value_dim: 32               # Value dim
+  p_dropout: .1               # Dropout probability
+
+datapipe:
+  source_file: "translation_task/europarl-v7.de-en.de"
+  target_file: "translation_task/europarl-v7.de-en.en"
+  batch_size: 128
+
+training:
+  label_smoothing: .1
+  warmup_steps: 4000
+  log_dir: "logs"
+
+tokenizer:
+  source_tokenizer_path: "tokenizer/tokenizer_de_lowercase_15000.model"
+  target_tokenizer_path: "tokenizer/tokenizer_en_lowercase_5000.model"
+
+p_test: .1
+
+num_steps:
+  num_training_steps: 100000
+  num_validation_steps: 1000
+  num_validation_runs: 10
