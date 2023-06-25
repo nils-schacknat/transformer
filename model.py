@@ -15,8 +15,9 @@ class Transformer(nn.Module):
         key_dim: int,
         value_dim: int,
         p_dropout: float,
-        bos_idx: int,
-        eos_idx: int,
+        target_bos_id: int,
+        target_eos_id: int,
+        source_pad_id: int
     ):
         """
         Initializes the Transformer model.
@@ -31,8 +32,9 @@ class Transformer(nn.Module):
             key_dim (int): Dimensionality of the key vectors in self-attention.
             value_dim (int): Dimensionality of the value vectors in self-attention.
             p_dropout (float): Dropout rate.
-            bos_idx (int): Index of the beginning-of-sequence token.
-            eos_idx (int): Index of the end-of-sequence token.
+            target_bos_id (int): Index of the target beginning-of-sequence token.
+            target_eos_id (int): Index of the target end-of-sequence token.
+            source_pad_id (int): Index of the source padding token.
         """
         super().__init__()
         self.src_embedding_layer = nn.Embedding(
@@ -56,8 +58,9 @@ class Transformer(nn.Module):
 
         self.linear = nn.Linear(in_features=model_dim, out_features=target_vocab_size)
 
-        self.bos_idx = bos_idx
-        self.eos_idx = eos_idx
+        self.tgt_bos_id = target_bos_id
+        self.tgt_eos_id = target_eos_id
+        self.src_pad_id = source_pad_id
 
         self.model_dim = model_dim
 
@@ -67,18 +70,19 @@ class Transformer(nn.Module):
                 nn.init.xavier_uniform_(p)
 
     def encode_source(
-        self, src_sequence: torch.Tensor, src_key_padding_mask: torch.Tensor = None
+        self, src_sequence: torch.Tensor
     ) -> torch.Tensor:
         """
         Encodes the source sequence.
 
         Args:
             src_sequence (torch.Tensor): Source sequence tensor.
-            src_key_padding_mask (torch.Tensor, optional): Mask indicating padding positions in the source sequence.
 
         Returns:
             torch.Tensor: Encoded source tensor.
         """
+        src_key_padding_mask = src_sequence == self.src_pad_id
+
         src_embedded = self.src_embedding_layer(src_sequence) * self.model_dim**0.5
         src_embedded = src_embedded + positional_encoding(
             sequence_length=src_sequence.shape[-1], embedding_dim=self.model_dim
@@ -124,7 +128,6 @@ class Transformer(nn.Module):
     def generate(
         self,
         src_sequence: torch.Tensor,
-        src_key_padding_mask: torch.Tensor = None,
         max_len: int = 128,
     ) -> torch.Tensor:
         """
@@ -132,7 +135,6 @@ class Transformer(nn.Module):
 
         Args:
             src_sequence (torch.Tensor): Source sequence tensor.
-            src_key_padding_mask (torch.Tensor, optional): Mask indicating padding positions in the source sequence.
             max_len (int, optional): Maximum length of the generated sequences.
 
         Returns:
@@ -142,9 +144,10 @@ class Transformer(nn.Module):
             src_sequence = src_sequence.unsqueeze(0)
 
         batch_size, sequence_length = src_sequence.shape
+        src_key_padding_mask = src_sequence == self.src_pad_id
 
-        src_encoding = self.encode_source(src_sequence, src_key_padding_mask)
-        tgt_sequence = torch.full((batch_size, 1), self.bos_idx)
+        src_encoding = self.encode_source(src_sequence)
+        tgt_sequence = torch.full((batch_size, 1), self.tgt_bos_id)
 
         for _ in range(max_len):
             logits = self(src_encoding, tgt_sequence, src_key_padding_mask)[
@@ -153,28 +156,33 @@ class Transformer(nn.Module):
             next_token = torch.argmax(logits, dim=-1)
             tgt_sequence = torch.cat((tgt_sequence, next_token.unsqueeze(1)), dim=1)
 
-            if torch.any(tgt_sequence == self.eos_idx, dim=1).all():
+            if torch.any(tgt_sequence == self.tgt_eos_id, dim=1).all():
                 break
 
         return tgt_sequence
 
 
 if __name__ == "__main__":
-    from datapipe import TranslationDatapipe
-    from util import load_config
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using {device}")
+    from translation_datapipe import create_translation_datapipe_train
+    from util import load_config, load_tokenizers, get_tokenizer_params
 
     # Load config
     config = load_config("config.yaml")
 
+    # Load the tokenizers
+    source_tokenizer, target_tokenizer = load_tokenizers(**config["tokenizer"])
+
     # Load the datapipe
-    datapipe = TranslationDatapipe(**config["datapipe"], **config["tokenizer"])
+    translation_datapipe = create_translation_datapipe_train(
+        source_tokenizer=source_tokenizer,
+        target_tokenizer=target_tokenizer,
+        **config["datapipe_train"]
+    )
 
     # Create the model
     transformer = Transformer(
-        **datapipe.tokenizer_params, **config["transformer_params"]
+        **get_tokenizer_params(source_tokenizer, target_tokenizer),
+        **config["transformer_params"]
     )
 
     print(
@@ -183,12 +191,12 @@ if __name__ == "__main__":
 
     # Iterate over batches of data
     print("Batched Data:")
-    for batch in datapipe:
+    for batch in translation_datapipe:
         source_batch, target_batch = batch
-        src_key_padding_mask = source_batch == datapipe.source_tokenizer.pad_id()
+        src_key_padding_mask = source_batch == source_tokenizer.pad_id()
         print(f"Input Batch: {source_batch}")
         print(f"Padding_mask: {src_key_padding_mask}")
         print(
-            f"Output Batch: {transformer.generate(source_batch, src_key_padding_mask).shape}"
+            f"Output Batch: {transformer.generate(source_batch).shape}"
         )
         break

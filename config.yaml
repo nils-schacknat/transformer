@@ -7,10 +7,17 @@ transformer_params:
   value_dim: 32               # Value dim
   p_dropout: .1               # Dropout probability
 
-datapipe:
-  source_file: "translation_task/europarl-v7.de-en.de"
-  target_file: "translation_task/europarl-v7.de-en.en"
-  batch_size: 128
+datapipe_train:
+  source_file: "translation_task/europarl-v7.de-en_train.de"
+  target_file: "translation_task/europarl-v7.de-en_train.en"
+  max_token_count: 128        # Approximate count of src_tokens + tgt_tokens + padding, 50000 in paper
+  buffer_size: 6400           # Buffer size for batching
+
+datapipe_val:
+  source_file: "translation_task/europarl-v7.de-en_val.de"
+  target_file: "translation_task/europarl-v7.de-en_val.en"
+  max_token_count: 128        # Approximate count of src_tokens + padding
+  buffer_size: 6400           # Buffer size for batching
 
 training:
   label_smoothing: .1
@@ -21,9 +28,9 @@ tokenizer:
   source_tokenizer_path: "tokenizer/tokenizer_de_lowercase_15000.model"
   target_tokenizer_path: "tokenizer/tokenizer_en_lowercase_5000.model"
 
-p_test: .1
+max_generation_length: 64
 
 num_steps:
-  num_training_steps: 100000
-  num_validation_steps: 1000
+  num_training_steps: 100
+  num_validation_steps: 2
   num_validation_runs: 10

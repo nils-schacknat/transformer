@@ -1,4 +1,5 @@
 import os
+from math import sqrt
 from typing import Optional
 
 import numpy as np
@@ -8,20 +9,23 @@ import torch.optim as optim
 from tqdm import tqdm
 
 from model import Transformer
+from torchdata.datapipes.iter import IterableWrapper
 from torch.utils.tensorboard import SummaryWriter
-from datapipe import TranslationDatapipe
 from torchtext.data import metrics
 import datetime
 from util import strip_tokens_after_eos
+import sentencepiece as spm
 
 
 class Trainer:
     def __init__(
         self,
         model: Transformer,
-        train_pipe: TranslationDatapipe,
-        val_pipe: TranslationDatapipe,
-        device: str,
+        source_tokenizer: spm.SentencePieceProcessor,
+        target_tokenizer: spm.SentencePieceProcessor,
+        train_pipe: IterableWrapper,
+        val_pipe: IterableWrapper,
+        max_generation_length: int,
         log_dir: str,
         label_smoothing: float,
         warmup_steps: int,
@@ -32,9 +36,11 @@ class Trainer:
 
         Args:
             model (Transformer): The model to train.
+            source_tokenizer (spm.SentencePieceProcessor): SentencePiece tokenizer for the source language.
+            target_tokenizer (spm.SentencePieceProcessor): SentencePiece tokenizer for the target language.
             train_pipe (TranslationDatapipe): DataLoader for training data.
             val_pipe (TranslationDatapipe): DataLoader for validation data.
-            device (str): Device to use for training ("cpu" or "cuda").
+            max_generation_length (int): The maximum length for sequence generation during validation.
             log_dir (str): Directory path for logging with TensorBoard.
             label_smoothing (float): Smoothing factor for label smoothing in the loss calculation.
             warmup_steps (int): Number of warm-up steps for the learning rate scheduler.
@@ -43,13 +49,15 @@ class Trainer:
         self.model = model
         self.train_pipe = train_pipe
         self.val_pipe = val_pipe
-        self.device = device
+        self.source_tokenizer = source_tokenizer
+        self.target_tokenizer = target_tokenizer
+        self.max_generation_length = max_generation_length
 
         self.criterion = nn.CrossEntropyLoss(
-            ignore_index=train_pipe.target_tokenizer.pad_id(), label_smoothing=label_smoothing
+            ignore_index=self.target_tokenizer.pad_id(), label_smoothing=label_smoothing
         )
         self.optimizer = optim.Adam(
-            self.model.parameters(), lr=self.model.model_dim**(-.5), betas=(0.9, 0.98), eps=1e-9
+            self.model.parameters(), lr=1/sqrt(self.model.model_dim), betas=(0.9, 0.98), eps=1e-9
         )
 
         def lrate(step_num: int) -> float:
@@ -82,11 +90,10 @@ class Trainer:
         """
         self.model.train()
 
-        inputs, targets = inputs.to(self.device), targets.to(self.device)
-        src_key_padding_mask = inputs == self.train_pipe.source_tokenizer.pad_id()
+        src_key_padding_mask = inputs == self.source_tokenizer.pad_id()
 
         enocded_inputs = self.model.encode_source(
-            src_sequence=inputs, src_key_padding_mask=src_key_padding_mask
+            src_sequence=inputs
         )
         logits = self.model(
             src_encoding=enocded_inputs,
@@ -118,17 +125,15 @@ class Trainer:
         bleu_score_list = []
 
         with torch.no_grad():
-            pbar = tqdm(total=num_validation_steps, ncols=120, desc="Evaluating", leave=False)
+            pbar = tqdm(total=num_validation_steps, ncols=100, desc="Evaluating", leave=False)
             pbar.update(1)
             for i, (inputs, targets) in enumerate(self.val_pipe):
-                inputs, targets = inputs.to(self.device), targets.to(self.device)
-                src_key_padding_mask = inputs == self.train_pipe.source_tokenizer.pad_id()
-                outputs = self.model.generate(src_sequence=inputs, src_key_padding_mask=src_key_padding_mask, max_len=2)
+                outputs = self.model.generate(src_sequence=inputs, max_len=self.max_generation_length)
 
-                targets_processed = strip_tokens_after_eos(targets, val_pipe.target_tokenizer.eos_id())
-                targets_processed = [val_pipe.target_tokenizer.id_to_piece(s) for s in targets_processed]
-                outputs_processed = strip_tokens_after_eos(outputs, val_pipe.target_tokenizer.eos_id())
-                outputs_processed = [val_pipe.target_tokenizer.id_to_piece(s) for s in outputs_processed]
+                targets_processed = strip_tokens_after_eos(targets, self.target_tokenizer.eos_id())
+                targets_processed = [self.target_tokenizer.id_to_piece(s) for s in targets_processed]
+                outputs_processed = strip_tokens_after_eos(outputs, self.target_tokenizer.eos_id())
+                outputs_processed = [self.target_tokenizer.id_to_piece(s) for s in outputs_processed]
 
                 # Calculate the BLEU score
                 bleu_score = metrics.bleu_score(outputs_processed, targets_processed)
@@ -153,7 +158,7 @@ class Trainer:
             num_validation_steps (int): Number of validation steps/batches.
             num_validation_runs (int): Number of validation runs during training.
         """
-        pbar = tqdm(total=num_training_steps, ncols=120, desc="Training")
+        pbar = tqdm(total=num_training_steps, ncols=100, desc="Training")
         pbar.update(1)
         while self.training_step < num_training_steps:
             for inputs, targets in self.train_pipe:
@@ -188,30 +193,47 @@ class Trainer:
 
 
 if __name__ == "__main__":
-    from util import load_config
+    from translation_datapipe import create_translation_datapipe_train, create_translation_datapipe_val
+    from util import load_config, load_tokenizers, get_tokenizer_params
     import os
     import time
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using {device}")
+    torch.set_default_device(device)
 
     # Load config
     config = load_config("config.yaml")
 
-    # Load the datapipe
-    datapipe = TranslationDatapipe(**config["datapipe"], **config["tokenizer"])
-    train_pipe, val_pipe = datapipe.random_split(config["p_test"])
+    # Load the tokenizers
+    source_tokenizer, target_tokenizer = load_tokenizers(**config["tokenizer"])
+
+    # Load the training and validation pipe
+    train_pipe = create_translation_datapipe_train(
+        source_tokenizer=source_tokenizer,
+        target_tokenizer=target_tokenizer,
+        **config["datapipe_train"]
+    )
+    val_pipe = create_translation_datapipe_val(
+        source_tokenizer=source_tokenizer,
+        target_tokenizer=target_tokenizer,
+        max_generation_length=config["max_generation_length"],
+        **config["datapipe_val"]
+    )
 
     # Create the model
     transformer = Transformer(
-        **datapipe.tokenizer_params, **config["transformer_params"]
+        **get_tokenizer_params(source_tokenizer, target_tokenizer),
+        **config["transformer_params"]
     )
 
     trainer = Trainer(
         model=transformer,
+        source_tokenizer=source_tokenizer,
+        target_tokenizer=target_tokenizer,
         train_pipe=train_pipe,
         val_pipe=val_pipe,
-        device=device,
+        max_generation_length=config["max_generation_length"],
         **config["training"]
     )
 
