@@ -1,4 +1,3 @@
-import os
 from math import sqrt
 from typing import Optional
 
@@ -198,6 +197,7 @@ if __name__ == "__main__":
     import os
     import time
 
+    # Set the device
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using {device}")
     torch.set_default_device(device)

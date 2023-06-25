@@ -1,4 +1,3 @@
-import fileinput
 import sentencepiece as spm
 from math import sqrt
 
@@ -83,7 +82,7 @@ def combine_datapipes_train(
     datapipe = datapipe.shuffle(buffer_size=buffer_size*3)
     datapipe = datapipe.max_token_bucketize(
         max_token_count=max_token_count,
-        len_fn=lambda sample: sqrt(len(sample[0])**2 + len(sample[1])**2)*sqrt(2),
+        len_fn=lambda sample: sqrt(len(sample[0])**2 + len(sample[1])**2)/sqrt(2),
         buffer_size=buffer_size,
         include_padding=True
     )
@@ -132,7 +131,7 @@ def combine_datapipes_val(
     datapipe = datapipe.max_token_bucketize(
         max_token_count=max_token_count,
         max_len=max_generation_length,
-        len_fn=lambda sample: len(sample[0]),
+        len_fn=lambda sample: len(sample[1]),
         buffer_size=buffer_size,
         include_padding=True
     )

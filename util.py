@@ -2,7 +2,7 @@ import random
 
 import yaml
 import sentencepiece as spm
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
 import torch
 
 
@@ -77,11 +77,33 @@ def strip_tokens_after_eos(tensor: torch.Tensor, eos_id: int) -> torch.Tensor:
     return tensor
 
 
-def translate_tensor(tensor: torch.Tensor, tokenizer: spm.SentencePieceProcessor):
+def translate_tensor(tensor: torch.Tensor, tokenizer: spm.SentencePieceProcessor) -> List[str]:
+    """
+    Translates a tensor using a tokenizer and returns the decoded strings.
+
+    Args:
+        tensor (torch.Tensor): The input tensor to be translated.
+        tokenizer (spm.SentencePieceProcessor): The tokenizer used for decoding.
+
+    Returns:
+        List[str]: The decoded strings.
+    """
     return tokenizer.decode(tensor.tolist())
 
 
-def split_dataset_helper(input_file, train_file, val_file, p_val):
+def split_dataset_helper(input_file: str, train_file: str, val_file: str, p_val: float) -> None:
+    """
+    Splits the input file randomly into train and validation files based on the given percentage.
+
+    Args:
+        input_file (str): Path to the input file to be split.
+        train_file (str): Path to the output train file.
+        val_file (str): Path to the output validation file.
+        p_val (float): The percentage of lines to be allocated for validation.
+
+    Returns:
+        None
+    """
     with open(input_file, 'r') as file:
         lines = file.readlines()
 
@@ -100,6 +122,8 @@ def split_dataset_helper(input_file, train_file, val_file, p_val):
 
 
 if __name__ == "__main__":
+
+    # Create a train - val split
     p_val = .05
     src_file = "translation_task/europarl-v7.de-en.de"
     tgt_file = "translation_task/europarl-v7.de-en.en"
