@@ -75,8 +75,8 @@ def combine_datapipes_train(
     # Combine source and target pipelines
     datapipe = source_datapipe.zip(target_datapipe)
 
-    # Filter out empty sequences
-    datapipe = datapipe.filter(filter_fn=lambda x: len(x[0]) > 2 and len(x[1]) > 2)
+    # Filter out small sequences
+    datapipe = datapipe.filter(filter_fn=lambda x: len(x[0]) > 5 and len(x[1]) > 5)
 
     # Bucketing and batching
     datapipe = datapipe.shuffle(buffer_size=buffer_size*3)
@@ -124,8 +124,8 @@ def combine_datapipes_val(
     # Combine source and target pipelines
     datapipe = source_datapipe.zip(target_datapipe)
 
-    # Filter out empty sequences
-    datapipe = datapipe.filter(filter_fn=lambda x: len(x[0]) > 2 and len(x[1]) > 2)
+    # Filter out small sequences
+    datapipe = datapipe.filter(filter_fn=lambda x: len(x[0]) > 5 and len(x[1]) > 5)
 
     # Bucketing and batching
     datapipe = datapipe.max_token_bucketize(

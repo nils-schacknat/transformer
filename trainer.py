@@ -99,7 +99,6 @@ class Trainer:
             tgt_sequence=targets[..., :-1],
             src_key_padding_mask=src_key_padding_mask,
         )
-        torch.autograd.set_detect_anomaly(True)
         loss = self.criterion(logits.reshape(-1, logits.shape[-1]), targets[..., 1:].reshape(-1))
         loss.backward()
 
@@ -126,22 +125,28 @@ class Trainer:
         with torch.no_grad():
             pbar = tqdm(total=num_validation_steps, ncols=100, desc="Evaluating", leave=False)
             pbar.update(1)
+
+            reference_corpus = []
+            candidate_corpus = []
             for i, (inputs, targets) in enumerate(self.val_pipe):
                 outputs = self.model.generate(src_sequence=inputs, max_len=self.max_generation_length)
 
                 targets_processed = strip_tokens_after_eos(targets, self.target_tokenizer.eos_id())
-                targets_processed = [self.target_tokenizer.id_to_piece(s) for s in targets_processed]
+                targets_processed = [[self.target_tokenizer.id_to_piece(s)] for s in targets_processed]
                 outputs_processed = strip_tokens_after_eos(outputs, self.target_tokenizer.eos_id())
                 outputs_processed = [self.target_tokenizer.id_to_piece(s) for s in outputs_processed]
 
-                # Calculate the BLEU score
-                bleu_score = metrics.bleu_score(outputs_processed, targets_processed)
-                self.current_bleu_score = bleu_score
+                reference_corpus.extend(targets_processed)
+                candidate_corpus.extend(outputs_processed)
 
-                bleu_score_list.append(bleu_score)
                 pbar.update(1)
                 if i == num_validation_steps - 1:
                     break
+
+            # Calculate the BLEU score
+            bleu_score = metrics.bleu_score(candidate_corpus, reference_corpus)
+            self.current_bleu_score = bleu_score
+
 
         bleu_score = np.mean(bleu_score_list)
         self.metrics["bleu_score"].append((bleu_score, self.training_step))
@@ -158,16 +163,21 @@ class Trainer:
             num_validation_runs (int): Number of validation runs during training.
         """
         pbar = tqdm(total=num_training_steps, ncols=100, desc="Training")
-        pbar.update(1)
+        pbar.update(self.training_step)
         while self.training_step < num_training_steps:
             for inputs, targets in self.train_pipe:
 
                 if self.training_step > num_training_steps:
                     break
 
-                self.train_step(inputs=inputs, targets=targets)
-                pbar.set_postfix({"loss": self.metrics["train_loss"][-1], "bleu_score": self.current_bleu_score})
-                pbar.update(1)
+                try:
+                    self.train_step(inputs=inputs, targets=targets)
+                    pbar.set_postfix({"loss": self.metrics["train_loss"][-1], "bleu_score": self.current_bleu_score})
+                    pbar.update(1)
+
+                except torch.cuda.OutOfMemoryError:
+                    torch.cuda.empty_cache()
+                    print("Skipping training step, out of memory error!")
 
                 if self.training_step % (num_training_steps // num_validation_runs) == 0:
                     pbar.set_postfix({"Validating": "..."})
@@ -186,9 +196,18 @@ class Trainer:
         checkpoint = {
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
+            "lr_scheduler_state_dict": self.lr_scheduler.state_dict(),
             "metrics": self.metrics,
         }
         torch.save(checkpoint, filepath)
+
+    def load_checkpoint(self, filepath):
+        checkpoint = torch.load(filepath)
+        self.model.load_state_dict(checkpoint["model_state_dict"])
+        self.metrics = checkpoint["metrics"]
+        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        self.lr_scheduler.load_state_dict(checkpoint["lr_scheduler_state_dict"])
+        self.training_step = len(self.metrics["train_loss"]) + 1
 
 
 if __name__ == "__main__":
@@ -237,6 +256,6 @@ if __name__ == "__main__":
         **config["training"]
     )
 
-    os.system(f"tensorboard --logdir={trainer.run_dir} &")
-    time.sleep(5)
+    # os.system(f"tensorboard --logdir={trainer.run_dir} &")
+    # time.sleep(5)
     trainer.train(**config["num_steps"])

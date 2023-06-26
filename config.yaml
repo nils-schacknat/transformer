@@ -10,14 +10,14 @@ transformer_params:
 datapipe_train:
   source_file: "translation_task/europarl-v7.de-en_train.de"
   target_file: "translation_task/europarl-v7.de-en_train.en"
-  max_token_count: 25000      # Approximate count of tokens + padding, 25000 in paper
-  buffer_size: 50000          # Buffer size for batching
+  max_token_count: 5000      # Approximate count of tokens + padding, 25000 in paper
+  buffer_size: 1000          # Buffer size for batching
 
 datapipe_val:
   source_file: "translation_task/europarl-v7.de-en_val.de"
   target_file: "translation_task/europarl-v7.de-en_val.en"
-  max_token_count: 25000      # Approximate count of src_tokens + padding
-  buffer_size: 50000          # Buffer size for batching
+  max_token_count: 2500      # Approximate count of src_tokens + padding
+  buffer_size: 1000          # Buffer size for batching
 
 training:
   label_smoothing: .1
@@ -28,7 +28,7 @@ tokenizer:
   source_tokenizer_path: "tokenizer/tokenizer_de_lowercase_15000.model"
   target_tokenizer_path: "tokenizer/tokenizer_en_lowercase_5000.model"
 
-max_generation_length: 64
+max_generation_length: 100
 
 num_steps:
   num_training_steps: 100000
