@@ -1,8 +1,0 @@
-# Ignore all files and folders except .py files
-legacy_code
-logs/*
-__pycache__
-translation_task/*
-.idea
-.ipynb_checkpoints
-attention_is_all_you_need.pdf
