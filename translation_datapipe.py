@@ -135,6 +135,7 @@ def combine_datapipes_val(
         buffer_size=buffer_size,
         include_padding=True
     )
+    datapipe = datapipe.shuffle(buffer_size=256)
 
     # Unzip the sequence pairs into separate source and target sequences
     datapipe = datapipe.map(lambda sequence_pairs: tuple(zip(*sequence_pairs)))
