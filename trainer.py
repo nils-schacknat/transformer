@@ -120,8 +120,6 @@ class Trainer:
         Validate by computing the BLEU score on the validation set.
         """
         self.model.eval()
-        bleu_score_list = []
-
         with torch.no_grad():
             pbar = tqdm(total=num_validation_steps, ncols=100, desc="Evaluating", leave=False)
             pbar.update(1)
@@ -147,10 +145,7 @@ class Trainer:
             bleu_score = metrics.bleu_score(candidate_corpus, reference_corpus)
             self.current_bleu_score = bleu_score
 
-
-        bleu_score = np.mean(bleu_score_list)
         self.metrics["bleu_score"].append((bleu_score, self.training_step))
-
         self.writer.add_scalar("bleu", bleu_score, self.training_step)
 
     def train(self, num_training_steps: int, num_validation_steps: int, num_validation_runs: int) -> None:
