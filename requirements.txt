@@ -1,0 +1,10 @@
+tqdm
+pyyaml
+
+sentencepiece
+datasets
+
+torch
+torchdata
+torchtext
+tensorboard

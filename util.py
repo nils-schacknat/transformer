@@ -1,5 +1,3 @@
-import random
-
 import yaml
 import sentencepiece as spm
 from typing import Dict, List
