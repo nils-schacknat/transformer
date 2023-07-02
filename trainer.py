@@ -6,23 +6,30 @@ import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
 
+from translation_datapipe import create_train_test_pipe
+from util import load_tokenizer, get_tokenizer_params
+
 from model import Transformer
 from torchdata.datapipes.iter import IterableWrapper
 from torch.utils.tensorboard import SummaryWriter
 from torchtext.data import metrics
 import datetime
 from util import strip_tokens_after_eos
+import os
 import sentencepiece as spm
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class Trainer:
     def __init__(
         self,
         model: Transformer,
-        source_tokenizer: spm.SentencePieceProcessor,
-        target_tokenizer: spm.SentencePieceProcessor,
+        tokenizer: spm.SentencePieceProcessor,
         train_pipe: IterableWrapper,
-        val_pipe: IterableWrapper,
+        test_pipe: IterableWrapper,
         max_generation_length: int,
         log_dir: str,
         label_smoothing: float,
@@ -30,15 +37,14 @@ class Trainer:
         run_identifier: Optional[str] = None
     ) -> None:
         """
-        Trainer class for training and validating a PyTorch transformer model.
+        Trainer class for training and testing a PyTorch transformer model.
 
         Args:
             model (Transformer): The model to train.
-            source_tokenizer (spm.SentencePieceProcessor): SentencePiece tokenizer for the source language.
-            target_tokenizer (spm.SentencePieceProcessor): SentencePiece tokenizer for the target language.
+            tokenizer (spm.SentencePieceProcessor): SentencePiece tokenizer.
             train_pipe (TranslationDatapipe): DataLoader for training data.
-            val_pipe (TranslationDatapipe): DataLoader for validation data.
-            max_generation_length (int): The maximum length for sequence generation during validation.
+            test_pipe (TranslationDatapipe): DataLoader for testing data.
+            max_generation_length (int): The maximum length for sequence generation during testing.
             log_dir (str): Directory path for logging with TensorBoard.
             label_smoothing (float): Smoothing factor for label smoothing in the loss calculation.
             warmup_steps (int): Number of warm-up steps for the learning rate scheduler.
@@ -46,13 +52,12 @@ class Trainer:
         """
         self.model = model
         self.train_pipe = train_pipe
-        self.val_pipe = val_pipe
-        self.source_tokenizer = source_tokenizer
-        self.target_tokenizer = target_tokenizer
+        self.test_pipe = test_pipe
+        self.tokenizer = tokenizer
         self.max_generation_length = max_generation_length
 
         self.criterion = nn.CrossEntropyLoss(
-            ignore_index=self.target_tokenizer.pad_id(), label_smoothing=label_smoothing
+            ignore_index=self.tokenizer.pad_id(), label_smoothing=label_smoothing
         )
         self.optimizer = optim.Adam(
             self.model.parameters(), lr=1/sqrt(self.model.model_dim), betas=(0.9, 0.98), eps=1e-9
@@ -88,7 +93,7 @@ class Trainer:
         """
         self.model.train()
 
-        src_key_padding_mask = inputs == self.source_tokenizer.pad_id()
+        src_key_padding_mask = inputs == self.tokenizer.pad_id()
 
         enocded_inputs = self.model.encode_source(
             src_sequence=inputs
@@ -114,31 +119,28 @@ class Trainer:
         self.writer.add_scalar("loss", train_loss, self.training_step)
         self.writer.flush()
 
-    def validate(self, num_validation_steps: int) -> None:
+    def validate(self) -> None:
         """
-        Validate by computing the BLEU score on the validation set.
+        Validate by computing the BLEU score on the testing set.
         """
         self.model.eval()
         with torch.no_grad():
-            pbar = tqdm(total=num_validation_steps, ncols=100, desc="Evaluating", leave=False)
+            pbar = tqdm(desc="Evaluating", leave=False)
             pbar.update(1)
 
             reference_corpus = []
             candidate_corpus = []
-            for i, (inputs, targets) in enumerate(self.val_pipe):
+            for inputs, targets in self.test_pipe:
                 outputs = self.model.generate(src_sequence=inputs, max_len=self.max_generation_length)
 
-                targets_processed = strip_tokens_after_eos(targets, self.target_tokenizer.eos_id())
-                targets_processed = [[self.target_tokenizer.id_to_piece(s)] for s in targets_processed]
-                outputs_processed = strip_tokens_after_eos(outputs, self.target_tokenizer.eos_id())
-                outputs_processed = [self.target_tokenizer.id_to_piece(s) for s in outputs_processed]
+                targets_processed = [[self.tokenizer.encode_as_pieces(s)] for s in targets]
+                outputs_processed = strip_tokens_after_eos(outputs, self.tokenizer.eos_id())
+                outputs_processed = [self.tokenizer.id_to_piece(s) for s in outputs_processed]
 
                 reference_corpus.extend(targets_processed)
                 candidate_corpus.extend(outputs_processed)
 
                 pbar.update(1)
-                if i == num_validation_steps - 1:
-                    break
 
             # Calculate the BLEU score
             bleu_score = metrics.bleu_score(candidate_corpus, reference_corpus)
@@ -147,14 +149,13 @@ class Trainer:
         self.metrics["bleu_score"].append((bleu_score, self.training_step))
         self.writer.add_scalar("bleu", bleu_score, self.training_step)
 
-    def train(self, num_training_steps: int, num_validation_steps: int, num_validation_runs: int) -> None:
+    def train(self, num_training_steps: int, num_testing_runs: int) -> None:
         """
         Trains the model for the specified number of training steps.
 
         Args:
             num_training_steps (int): Number of training steps/batches.
-            num_validation_steps (int): Number of validation steps/batches.
-            num_validation_runs (int): Number of validation runs during training.
+            num_testing_runs (int): Number of testing runs during training.
         """
         pbar = tqdm(total=num_training_steps, ncols=100, desc="Training")
         pbar.update(self.training_step)
@@ -171,11 +172,11 @@ class Trainer:
 
                 except torch.cuda.OutOfMemoryError:
                     torch.cuda.empty_cache()
-                    print("Skipping training step, out of memory error!")
+                    logger.warning("Skipping training step, out of memory error!")
 
-                if self.training_step % (num_training_steps // num_validation_runs) == 0:
+                if self.training_step % (num_training_steps // num_testing_runs) == 0:
                     pbar.set_postfix({"Validating": "..."})
-                    self.validate(num_validation_steps)
+                    self.validate()
                     self.save_checkpoint(os.path.join(self.run_dir, f"checkpoint_{self.training_step}"))
 
         self.writer.close()
@@ -204,52 +205,42 @@ class Trainer:
         self.training_step = len(self.metrics["train_loss"]) + 1
 
 
-if __name__ == "__main__":
-    from translation_datapipe import create_translation_datapipe_train, create_translation_datapipe_val
-    from util import load_config, load_tokenizers, get_tokenizer_params
-    import os
-    import time
-
+def start_training_run(config):
     # Set the device
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using {device}")
+    logger.info(f"Using {device}")
     torch.set_default_device(device)
 
-    # Load config
-    config = load_config("config.yaml")
+    # Load the tokenizer
+    tokenizer = load_tokenizer(**config["tokenizer"])
 
-    # Load the tokenizers
-    source_tokenizer, target_tokenizer = load_tokenizers(**config["tokenizer"])
-
-    # Load the training and validation pipe
-    train_pipe = create_translation_datapipe_train(
-        source_tokenizer=source_tokenizer,
-        target_tokenizer=target_tokenizer,
-        **config["datapipe_train"]
-    )
-    val_pipe = create_translation_datapipe_val(
-        source_tokenizer=source_tokenizer,
-        target_tokenizer=target_tokenizer,
-        max_generation_length=config["max_generation_length"],
-        **config["datapipe_val"]
+    # Load the training and testing pipe
+    train_pipe, test_pipe = create_train_test_pipe(
+        tokenizer=tokenizer,
+        max_token_count=config["max_token_count"]
     )
 
     # Create the model
     transformer = Transformer(
-        **get_tokenizer_params(source_tokenizer, target_tokenizer),
+        **get_tokenizer_params(tokenizer),
         **config["transformer_params"]
     )
 
     trainer = Trainer(
         model=transformer,
-        source_tokenizer=source_tokenizer,
-        target_tokenizer=target_tokenizer,
+        tokenizer=tokenizer,
         train_pipe=train_pipe,
-        val_pipe=val_pipe,
+        test_pipe=test_pipe,
         max_generation_length=config["max_generation_length"],
-        **config["training"]
+        **config["training"],
+        run_identifier="test"
     )
 
-    # os.system(f"tensorboard --logdir={trainer.run_dir} &")
-    # time.sleep(5)
     trainer.train(**config["num_steps"])
+
+
+if __name__ == "__main__":
+    from util import load_config
+
+    config = load_config("config.yaml")
+    start_training_run(config)
