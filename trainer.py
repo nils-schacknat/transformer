@@ -205,7 +205,7 @@ class Trainer:
         self.training_step = len(self.metrics["train_loss"]) + 1
 
 
-def start_training_run(config):
+def start_training_run(config, run_identifier=None):
     # Set the device
     device = "cuda" if torch.cuda.is_available() else "cpu"
     logger.info(f"Using {device}")
@@ -233,7 +233,7 @@ def start_training_run(config):
         test_pipe=test_pipe,
         max_generation_length=config["max_generation_length"],
         **config["training"],
-        run_identifier="test"
+        run_identifier=run_identifier
     )
 
     trainer.train(**config["num_steps"])

@@ -10,7 +10,7 @@ config_path = "config.yaml"
 config = load_config(config_path)
 
 # Create the logging directory
-os.makedirs(config["training"]["log_dir"])
+os.makedirs(config["training"]["log_dir"], exist_ok=True)
 
 # Start a training run
 start_training_run(config)
