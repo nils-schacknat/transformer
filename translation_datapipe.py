@@ -131,11 +131,11 @@ if __name__ == "__main__":
 
     for source_batch, target_batch in train_pipe:
         print(source_batch.shape, target_batch.shape)
-        # print(*tokenizer.decode(source_batch.tolist())[:5], sep="\n")
-        # print()
-        # print(*tokenizer.decode(target_batch.tolist())[:5], sep="\n")
-        # print()
-        # break
+        print(*tokenizer.decode(source_batch.tolist())[:5], sep="\n")
+        print()
+        print(*tokenizer.decode(target_batch.tolist())[:5], sep="\n")
+        print()
+        break
 
     for source_batch, target_batch in test_pipe:
         print(*tokenizer.decode(source_batch.tolist())[:5], sep="\n")
