@@ -157,6 +157,8 @@ class Trainer:
             num_training_steps (int): Number of training steps/batches.
             num_testing_runs (int): Number of testing runs during training.
         """
+        out_of_memory_errors = 0
+
         pbar = tqdm(total=num_training_steps, ncols=100, desc="Training")
         pbar.update(self.training_step)
         while self.training_step < num_training_steps:
@@ -167,12 +169,13 @@ class Trainer:
 
                 try:
                     self.train_step(inputs=inputs, targets=targets)
-                    pbar.set_postfix({"loss": self.metrics["train_loss"][-1], "bleu_score": self.current_bleu_score})
+                    pbar.set_postfix({"loss": self.metrics["train_loss"][-1], "bleu_score": self.current_bleu_score, "out_of_memory_errors": out_of_memory_errors})
                     pbar.update(1)
 
                 except torch.cuda.OutOfMemoryError:
                     torch.cuda.empty_cache()
-                    logger.warning("Skipping training step, out of memory error!")
+                    out_of_memory_errors += 1
+                    logger.debug("Skipping training step, out of memory error!")
 
                 if self.training_step % (num_training_steps // num_testing_runs) == 0:
                     pbar.set_postfix({"Validating": "..."})
