@@ -159,7 +159,7 @@ class Trainer:
         """
         out_of_memory_errors = 0
 
-        pbar = tqdm(total=num_training_steps, ncols=100, desc="Training")
+        pbar = tqdm(total=num_training_steps, ncols=120, desc="Training")
         pbar.update(self.training_step)
         while self.training_step < num_training_steps:
             for inputs, targets in self.train_pipe:
@@ -169,7 +169,12 @@ class Trainer:
 
                 try:
                     self.train_step(inputs=inputs, targets=targets)
-                    pbar.set_postfix({"loss": self.metrics["train_loss"][-1], "bleu_score": self.current_bleu_score, "out_of_memory_errors": out_of_memory_errors})
+
+                    postfix = dict(loss=self.metrics["train_loss"][-1], bleu_score=self.current_bleu_score)
+                    if out_of_memory_errors > 0:
+                        postfix["out_of_memory_errors"] = out_of_memory_errors
+                    pbar.set_postfix(postfix)
+
                     pbar.update(1)
 
                 except torch.cuda.OutOfMemoryError:
