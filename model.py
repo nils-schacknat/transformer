@@ -171,7 +171,7 @@ if __name__ == "__main__":
     # Load the datapipes
     train_pipe, test_pipe = create_train_test_pipe(
         tokenizer=tokenizer,
-        max_token_count=config["max_token_count"]
+        **config["datapipe_params"]
     )
 
     # Create the model

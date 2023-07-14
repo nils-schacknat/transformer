@@ -49,6 +49,7 @@ def create_datapipe_train(
     train_dataset,
     tokenizer: spm.SentencePieceProcessor,
     max_token_count: int,
+    buffer_size: int,
 ) -> IterableWrapper:
 
     def get_processed_tuple(dataset_entry):
@@ -78,7 +79,7 @@ def create_datapipe_train(
         max_token_count=max_token_count,
         len_fn=lambda sample: sqrt(len(sample[0])**2 + len(sample[1])**2)/sqrt(2),
         include_padding=True,
-        buffer_size=100000
+        buffer_size=buffer_size
     )
     datapipe = datapipe.shuffle(buffer_size=1000)
 
@@ -96,13 +97,14 @@ def create_datapipe_train(
     return datapipe
 
 
-def create_train_test_pipe(tokenizer: spm.SentencePieceProcessor, max_token_count: int):
+def create_train_test_pipe(tokenizer: spm.SentencePieceProcessor, max_token_count: int, buffer_size: int):
     dataset = load_dataset("wmt14", "de-en")
 
     train_pipe = create_datapipe_train(
         train_dataset=dataset["train"],
         tokenizer=tokenizer,
-        max_token_count=max_token_count
+        max_token_count=max_token_count,
+        buffer_size=buffer_size
     )
 
     test_pipe = create_datapipe_test(
@@ -127,7 +129,7 @@ if __name__ == "__main__":
     # Load the datapipes
     train_pipe, test_pipe = create_train_test_pipe(
         tokenizer=tokenizer,
-        max_token_count=config["max_token_count"]
+        **config["datapipe_params"]
     )
 
     for src_batch, tgt_batch in train_pipe:

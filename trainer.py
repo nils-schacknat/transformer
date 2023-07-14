@@ -1,3 +1,4 @@
+from collections import defaultdict
 from math import sqrt
 from typing import Optional
 
@@ -62,16 +63,14 @@ class Trainer:
         self.optimizer = optim.Adam(
             self.model.parameters(), lr=1/sqrt(self.model.model_dim), betas=(0.9, 0.98), eps=1e-9
         )
+        self.scaler = torch.cuda.amp.GradScaler()
 
         def lrate(step_num: int) -> float:
             step_num += 1
             return min(step_num**(-.5), step_num * warmup_steps**(-1.5))
         self.lr_scheduler = optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=lrate)
 
-        self.metrics = {
-            "train_loss": [],
-            "bleu_score": [],
-        }
+        self.metrics = defaultdict(list)
         self.current_bleu_score = torch.nan
         if run_identifier is None:
             now = datetime.datetime.now()
@@ -93,30 +92,38 @@ class Trainer:
         """
         self.model.train()
 
-        src_key_padding_mask = inputs == self.tokenizer.pad_id()
+        # Forward pass, use single precision floats
+        with torch.cuda.amp.autocast(dtype=torch.float16):
+            src_key_padding_mask = inputs == self.tokenizer.pad_id()
 
-        enocded_inputs = self.model.encode_source(
-            src_sequence=inputs
-        )
-        logits = self.model(
-            src_encoding=enocded_inputs,
-            tgt_sequence=targets[..., :-1],
-            src_key_padding_mask=src_key_padding_mask,
-        )
-        loss = self.criterion(logits.reshape(-1, logits.shape[-1]), targets[..., 1:].reshape(-1))
-        loss.backward()
+            enocded_inputs = self.model.encode_source(
+                src_sequence=inputs
+            )
+            logits = self.model(
+                src_encoding=enocded_inputs,
+                tgt_sequence=targets[..., :-1],
+                src_key_padding_mask=src_key_padding_mask,
+            )
+            loss = self.criterion(logits.reshape(-1, logits.shape[-1]), targets[..., 1:].reshape(-1))
 
-        self.optimizer.step()
+        self.scaler.scale(loss).backward()
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
+
         self.optimizer.zero_grad()
         self.lr_scheduler.step()
 
         self.training_step += 1
 
         # Metrics
-        train_loss = loss.item()
+        self.metrics["train_loss"].append(loss.item())
+        self.metrics["num_tokens"].append((
+            torch.sum(inputs != self.tokenizer.pad_id()).item(),
+            torch.sum(targets != self.tokenizer.pad_id()).item()
+        ))
+        logger.debug(f"num_src_tokens, num_tgt_tokens: {self.metrics['num_tokens'][-1]}")
 
-        self.metrics["train_loss"].append(train_loss)
-        self.writer.add_scalar("loss", train_loss, self.training_step)
+        self.writer.add_scalar("loss", loss.item(), self.training_step)
         self.writer.flush()
 
     def validate(self) -> None:
@@ -199,6 +206,7 @@ class Trainer:
         checkpoint = {
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
+            "scaler_state_dict": self.scaler.state_dict(),
             "lr_scheduler_state_dict": self.lr_scheduler.state_dict(),
             "metrics": self.metrics,
         }
@@ -207,9 +215,10 @@ class Trainer:
     def load_checkpoint(self, filepath):
         checkpoint = torch.load(filepath)
         self.model.load_state_dict(checkpoint["model_state_dict"])
-        self.metrics = checkpoint["metrics"]
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        self.scaler.load_state_dict(checkpoint["scaler_state_dict"])
         self.lr_scheduler.load_state_dict(checkpoint["lr_scheduler_state_dict"])
+        self.metrics = checkpoint["metrics"]
         self.training_step = len(self.metrics["train_loss"]) + 1
 
 
@@ -225,7 +234,7 @@ def start_training_run(config, run_identifier=None):
     # Load the training and testing pipe
     train_pipe, test_pipe = create_train_test_pipe(
         tokenizer=tokenizer,
-        max_token_count=config["max_token_count"]
+        **config["datapipe_params"]
     )
 
     # Create the model
@@ -239,7 +248,6 @@ def start_training_run(config, run_identifier=None):
         tokenizer=tokenizer,
         train_pipe=train_pipe,
         test_pipe=test_pipe,
-        max_generation_length=config["max_generation_length"],
         **config["training"],
         run_identifier=run_identifier
     )

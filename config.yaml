@@ -11,13 +11,17 @@ training:
   label_smoothing: .1
   warmup_steps: 4000
   log_dir: "logs"
+  max_generation_length: 256
 
 tokenizer:
   tokenizer_path: "tokenizer/shared_vocab_tokenizer.model"
 
-max_token_count: 25000
-max_generation_length: 256
+datapipe_params:
+  max_token_count: 25000
+  buffer_size: 100000
 
 num_steps:
   num_training_steps: 100000
   num_testing_runs: 10
+
+logging_level: "INFO"
