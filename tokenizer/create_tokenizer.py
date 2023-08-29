@@ -1,3 +1,7 @@
+"""
+A script for creating a SentencePiece tokenizer from the dataset for both the source and the target language.
+"""
+
 from datasets import load_dataset
 import sentencepiece as spm
 
@@ -8,7 +12,7 @@ input_sentence_size = 4000000
 
 def get_iterable():
     for i, item in enumerate(train_data):
-        if i == input_sentence_size//2:
+        if i == input_sentence_size // 2:
             break
 
         source_text = item["translation"]["de"]

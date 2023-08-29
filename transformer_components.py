@@ -96,7 +96,7 @@ class Decoder(nn.Module):
         input_tensor: Tensor,
         encoder_output: Tensor,
         src_key_padding_mask: Optional[Tensor] = None,
-    ):
+    ) -> Tensor:
         """
         Forward pass of the Decoder module.
 
@@ -172,7 +172,7 @@ class DecoderBlock(nn.Module):
         input_tensor: Tensor,
         encoder_output: Tensor,
         src_key_padding_mask: Optional[Tensor] = None,
-    ):
+    ) -> Tensor:
         """
         Forward pass of the decoder block.
 
@@ -249,7 +249,7 @@ class Encoder(nn.Module):
 
     def forward(
         self, input_tensor: Tensor, src_key_padding_mask: Optional[Tensor] = None
-    ):
+    ) -> Tensor:
         """
         Forward pass of the Encoder module.
 
@@ -312,7 +312,7 @@ class EncoderBlock(nn.Module):
 
     def forward(
         self, input_tensor: Tensor, src_key_padding_mask: Optional[Tensor] = None
-    ):
+    ) -> Tensor:
         """
         Forward pass of the encoder block.
 
@@ -457,7 +457,7 @@ class MultiHeadAttention(nn.Module):
         src_key_padding_mask: Tensor = None,
     ) -> Tensor:
         """
-        Compute dot product attention.
+        Compute the dot product attention.
 
         Args:
             Q (Tensor): Query tensor of shape (batch_size, num_heads, sequence_length, key_dim).

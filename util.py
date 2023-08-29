@@ -22,20 +22,20 @@ def load_config(path_to_config: str) -> Dict:
 
 def load_tokenizer(tokenizer_path: str) -> spm.SentencePieceProcessor:
     """
-    Load SentencePiece tokenizers.
+    Load the SentencePiece tokenizer.
 
     Args:
         tokenizer_path (str): Path to the tokenizer model file.
 
     Returns:
-        spm.SentencePieceProcessor: Loaded source and target tokenizers.
+        spm.SentencePieceProcessor: Loaded tokenizer.
     """
     return spm.SentencePieceProcessor(model_file=tokenizer_path)
 
 
 def get_tokenizer_params(tokenizer: spm.SentencePieceProcessor) -> Dict[str, int]:
     """
-    Get tokenizer parameters.
+    Get the tokenizer parameters.
 
     Args:
         tokenizer (spm.SentencePieceProcessor): The tokenizer.
@@ -47,7 +47,7 @@ def get_tokenizer_params(tokenizer: spm.SentencePieceProcessor) -> Dict[str, int
         vocab_size=tokenizer.vocab_size(),
         bos_id=tokenizer.bos_id(),
         eos_id=tokenizer.eos_id(),
-        pad_id=tokenizer.pad_id()
+        pad_id=tokenizer.pad_id(),
     )
 
 
@@ -65,16 +65,18 @@ def strip_tokens_after_eos(tensor: torch.Tensor, eos_id: int) -> torch.Tensor:
     tensor = tensor.tolist()
     for i, sequence in enumerate(tensor):
         if eos_id in sequence:
-            tensor[i] = sequence[:sequence.index(eos_id)+1]
+            tensor[i] = sequence[: sequence.index(eos_id) + 1]
     return tensor
 
 
-def translate_tensor(tensor: torch.Tensor, tokenizer: spm.SentencePieceProcessor) -> List[str]:
+def decode_tensor(
+    tensor: torch.Tensor, tokenizer: spm.SentencePieceProcessor
+) -> List[str]:
     """
-    Translates a tensor using a tokenizer and returns the decoded strings.
+    Decodes the tokens in a tensor and returns the decoded strings.
 
     Args:
-        tensor (torch.Tensor): The input tensor to be translated.
+        tensor (torch.Tensor): The input tensor to be decoded.
         tokenizer (spm.SentencePieceProcessor): The tokenizer used for decoding.
 
     Returns:

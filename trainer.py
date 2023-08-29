@@ -35,10 +35,10 @@ class Trainer:
         log_dir: str,
         label_smoothing: float,
         warmup_steps: int,
-        run_identifier: Optional[str] = None
+        run_identifier: Optional[str] = None,
     ) -> None:
         """
-        Trainer class for training and testing a PyTorch transformer model.
+        Trainer class for training and validating a transformer model.
 
         Args:
             model (Transformer): The model to train.
@@ -61,13 +61,17 @@ class Trainer:
             ignore_index=self.tokenizer.pad_id(), label_smoothing=label_smoothing
         )
         self.optimizer = optim.Adam(
-            self.model.parameters(), lr=1/sqrt(self.model.model_dim), betas=(0.9, 0.98), eps=1e-9
+            self.model.parameters(),
+            lr=1 / sqrt(self.model.model_dim),
+            betas=(0.9, 0.98),
+            eps=1e-9,
         )
         self.scaler = torch.cuda.amp.GradScaler()
 
         def lrate(step_num: int) -> float:
             step_num += 1
-            return min(step_num**(-.5), step_num * warmup_steps**(-1.5))
+            return min(step_num ** (-0.5), step_num * warmup_steps ** (-1.5))
+
         self.lr_scheduler = optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=lrate)
 
         self.metrics = defaultdict(list)
@@ -96,15 +100,15 @@ class Trainer:
         with torch.cuda.amp.autocast(dtype=torch.float16):
             src_key_padding_mask = inputs == self.tokenizer.pad_id()
 
-            enocded_inputs = self.model.encode_source(
-                src_sequence=inputs
-            )
+            enocded_inputs = self.model.encode_source(src_sequence=inputs)
             logits = self.model(
                 src_encoding=enocded_inputs,
                 tgt_sequence=targets[..., :-1],
                 src_key_padding_mask=src_key_padding_mask,
             )
-            loss = self.criterion(logits.reshape(-1, logits.shape[-1]), targets[..., 1:].reshape(-1))
+            loss = self.criterion(
+                logits.reshape(-1, logits.shape[-1]), targets[..., 1:].reshape(-1)
+            )
 
         self.scaler.scale(loss).backward()
         self.scaler.step(self.optimizer)
@@ -117,11 +121,15 @@ class Trainer:
 
         # Metrics
         self.metrics["train_loss"].append(loss.item())
-        self.metrics["num_tokens"].append((
-            torch.sum(inputs != self.tokenizer.pad_id()).item(),
-            torch.sum(targets != self.tokenizer.pad_id()).item()
-        ))
-        logger.debug(f"num_src_tokens, num_tgt_tokens: {self.metrics['num_tokens'][-1]}")
+        self.metrics["num_tokens"].append(
+            (
+                torch.sum(inputs != self.tokenizer.pad_id()).item(),
+                torch.sum(targets != self.tokenizer.pad_id()).item(),
+            )
+        )
+        logger.debug(
+            f"num_src_tokens, num_tgt_tokens: {self.metrics['num_tokens'][-1]}"
+        )
 
         self.writer.add_scalar("loss", loss.item(), self.training_step)
         self.writer.flush()
@@ -138,11 +146,19 @@ class Trainer:
             reference_corpus = []
             candidate_corpus = []
             for inputs, targets in self.test_pipe:
-                outputs = self.model.generate(src_sequence=inputs, max_len=self.max_generation_length)
+                outputs = self.model.generate(
+                    src_sequence=inputs, max_len=self.max_generation_length
+                )
 
-                targets_processed = [[self.tokenizer.encode_as_pieces(s)] for s in targets]
-                outputs_processed = strip_tokens_after_eos(outputs, self.tokenizer.eos_id())
-                outputs_processed = [self.tokenizer.id_to_piece(s) for s in outputs_processed]
+                targets_processed = [
+                    [self.tokenizer.encode_as_pieces(s)] for s in targets
+                ]
+                outputs_processed = strip_tokens_after_eos(
+                    outputs, self.tokenizer.eos_id()
+                )
+                outputs_processed = [
+                    self.tokenizer.id_to_piece(s) for s in outputs_processed
+                ]
 
                 reference_corpus.extend(targets_processed)
                 candidate_corpus.extend(outputs_processed)
@@ -170,14 +186,13 @@ class Trainer:
         pbar.update(self.training_step)
         while self.training_step < num_training_steps:
             for inputs, targets in self.train_pipe:
-
-                if self.training_step > num_training_steps:
-                    break
-
                 try:
                     self.train_step(inputs=inputs, targets=targets)
 
-                    postfix = dict(loss=self.metrics["train_loss"][-1], bleu_score=self.current_bleu_score)
+                    postfix = dict(
+                        loss=self.metrics["train_loss"][-1],
+                        bleu_score=self.current_bleu_score,
+                    )
                     if out_of_memory_errors > 0:
                         postfix["out_of_memory_errors"] = out_of_memory_errors
                     pbar.set_postfix(postfix)
@@ -192,7 +207,9 @@ class Trainer:
                 if self.training_step % (num_training_steps // num_testing_runs) == 0:
                     pbar.set_postfix({"Validating": "..."})
                     self.validate()
-                    self.save_checkpoint(os.path.join(self.run_dir, f"checkpoint_{self.training_step}"))
+                    self.save_checkpoint(
+                        os.path.join(self.run_dir, f"checkpoint_{self.training_step}")
+                    )
 
         self.writer.close()
 
@@ -212,7 +229,13 @@ class Trainer:
         }
         torch.save(checkpoint, filepath)
 
-    def load_checkpoint(self, filepath):
+    def load_checkpoint(self, filepath: str) -> None:
+        """
+        Loads a model checkpoint.
+
+        Args:
+            filepath (str): File path to load the checkpoint from.
+        """
         checkpoint = torch.load(filepath)
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -233,14 +256,12 @@ def start_training_run(config, run_identifier=None):
 
     # Load the training and testing pipe
     train_pipe, test_pipe = create_train_test_pipe(
-        tokenizer=tokenizer,
-        **config["datapipe_params"]
+        tokenizer=tokenizer, **config["datapipe_params"]
     )
 
     # Create the model
     transformer = Transformer(
-        **get_tokenizer_params(tokenizer),
-        **config["transformer_params"]
+        **get_tokenizer_params(tokenizer), **config["transformer_params"]
     )
 
     trainer = Trainer(
@@ -249,7 +270,7 @@ def start_training_run(config, run_identifier=None):
         train_pipe=train_pipe,
         test_pipe=test_pipe,
         **config["training"],
-        run_identifier=run_identifier
+        run_identifier=run_identifier,
     )
 
     trainer.train(**config["num_steps"])

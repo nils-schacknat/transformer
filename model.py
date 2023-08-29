@@ -17,7 +17,7 @@ class Transformer(nn.Module):
         p_dropout: float,
         bos_id: int,
         eos_id: int,
-        pad_id: int
+        pad_id: int,
     ):
         """
         Initializes the Transformer model.
@@ -65,9 +65,7 @@ class Transformer(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def encode_source(
-        self, src_sequence: torch.Tensor
-    ) -> torch.Tensor:
+    def encode_source(self, src_sequence: torch.Tensor) -> torch.Tensor:
         """
         Encodes the source sequence.
 
@@ -145,10 +143,8 @@ class Transformer(nn.Module):
         src_encoding = self.encode_source(src_sequence)
         tgt_sequence = torch.full((batch_size, 1), self.bos_id)
 
-        for _ in range(max_len-1):
-            logits = self(src_encoding, tgt_sequence, src_key_padding_mask)[
-                :, -1
-            ]
+        for _ in range(max_len - 1):
+            logits = self(src_encoding, tgt_sequence, src_key_padding_mask)[:, -1]
             next_token = torch.argmax(logits, dim=-1)
             tgt_sequence = torch.cat((tgt_sequence, next_token.unsqueeze(1)), dim=1)
 
@@ -170,14 +166,12 @@ if __name__ == "__main__":
 
     # Load the datapipes
     train_pipe, test_pipe = create_train_test_pipe(
-        tokenizer=tokenizer,
-        **config["datapipe_params"]
+        tokenizer=tokenizer, **config["datapipe_params"]
     )
 
     # Create the model
     transformer = Transformer(
-        **get_tokenizer_params(tokenizer),
-        **config["transformer_params"]
+        **get_tokenizer_params(tokenizer), **config["transformer_params"]
     )
 
     print(
@@ -189,7 +183,5 @@ if __name__ == "__main__":
     for batch in train_pipe:
         source_batch, target_batch = batch
         print(f"Input Batch: {source_batch.shape}")
-        print(
-            f"Output Batch: {transformer.generate(source_batch).shape}"
-        )
+        print(f"Output Batch: {transformer.generate(source_batch).shape}")
         break
