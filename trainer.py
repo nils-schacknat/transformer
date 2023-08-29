@@ -186,6 +186,10 @@ class Trainer:
         pbar.update(self.training_step)
         while self.training_step < num_training_steps:
             for inputs, targets in self.train_pipe:
+
+                if self.training_step > num_training_steps:
+                    break
+
                 try:
                     self.train_step(inputs=inputs, targets=targets)
 
