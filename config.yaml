@@ -17,8 +17,8 @@ tokenizer:
   tokenizer_path: "tokenizer/shared_vocab_tokenizer.model"
 
 datapipe_params:
-  max_token_count: 25000
-  buffer_size: 100000
+  max_token_count: 37500  # This includes padding tokens
+  buffer_size: 96000      # Buffer size for bucketing
 
 num_steps:
   num_training_steps: 100000
