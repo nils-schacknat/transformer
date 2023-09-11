@@ -1,4 +1,4 @@
-## Transformer implementation for English to German translation
+# Transformer implementation for English to German translation
 
 This project is a university assignment, implementing the Transformer architecture as introduced in ‘[Attention is All You Need](https://arxiv.org/abs/1706.03762)’ by Vaswani et al. Utilizing cloud-based training, I have been able to replicate the reported results for English to German translation on their specified ‘base’ model.
 
