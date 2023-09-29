@@ -1,6 +1,6 @@
 # Transformer implementation for English to German translation
 
-This project is a university assignment, implementing the Transformer architecture as introduced in ‘[Attention is All You Need](https://arxiv.org/abs/1706.03762)’ by Vaswani et al. Utilizing cloud-based training, I have been able to replicate the reported results for English to German translation on their specified ‘base’ model.
+This project is a university assignment, implementing the Transformer architecture as introduced in ‘[Attention is All You Need](https://arxiv.org/abs/1706.03762)’ by Vaswani et al. Utilizing cloud-based training, I replicated the reported results for English to German translation on their specified ‘base’ model.
 
 ## Methodology
 - **Implementation**:
@@ -25,7 +25,7 @@ The parameter configuration used for the model mirrors the 'base' model describe
 
 - **Translation Examples**: Several translation examples are provided in [demo_notebooks/translation_demo.ipynb](demo_notebooks/translation_demo.ipynb), showcasing the model's performance on a variety of sentences.
 
-You can download the latest training checkpoint, including the model weights and TensorBoard logs from [this link](https://heibox.uni-heidelberg.de/d/526fdc6dac434841bde1/). (For some time at least)
+The latest training checkpoint, including the model weights and TensorBoard logs, can be downloaded from [this link](https://heibox.uni-heidelberg.de/d/526fdc6dac434841bde1/) (for some time at least). 
 
 ## Installation Instructions
 
